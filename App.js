@@ -7,10 +7,12 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Import your screens
-import LoginScreen from './src/screens/auth/LoginScreen';
-import HomeScreen from './src/screens/main/HomeScreen';
-import TrackingScreen from './src/screens/main/TrackingScreen';
-import ProfileScreen from './src/screens/main/ProfileScreen';
+import LoginScreen from './LoginScreen';
+import HomeScreen from './HomeScreen';
+import TrackingScreen from './TrackingScreen';
+// You will need to create this ProfileScreen file as well
+import ProfileScreen from './ProfileScreen'; 
+
 
 // Import Supabase
 import { supabase } from './src/api/supabase';
