@@ -13,34 +13,55 @@ import {
   FlatList,
 } from 'react-native';
 import { supabase, addEmission } from './src/api/supabase';
+import { useTheme } from './src/context/ThemeContext';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
 // Simple inline components to avoid import issues
-const StreakCounter = ({ streak = 0 }) => (
-  <View style={styles.streakContainer}>
-    <Text style={styles.streakNumber}>{streak}</Text>
+const StreakCounter = ({ streak = 0, theme, isDarkMode }) => (
+  <View style={[
+    styles.streakContainer,
+    {
+      backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.15)' : theme.cardBackground,
+      borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : theme.border,
+    }
+  ]}>
+    <Text style={[styles.streakNumber, { color: theme.accentText }]}>{streak}</Text>
     <Text style={styles.streakEmoji}>🔥</Text>
-    <Text style={styles.streakLabel}>Days</Text>
+    <Text style={[styles.streakLabel, { color: theme.secondaryText }]}>Days</Text>
   </View>
 );
 
-const AchievementBadge = ({ achievement, size = 'small' }) => (
-  <View style={styles.achievementBadge}>
+const AchievementBadge = ({ achievement, size = 'small', theme, isDarkMode }) => (
+  <View style={[
+    styles.achievementBadge,
+    {
+      backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#F0FDF4',
+      borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : theme.accentText,
+    }
+  ]}>
     <Text style={styles.achievementEmoji}>{achievement?.emoji || '🏆'}</Text>
-    <Text style={styles.achievementName}>{achievement?.name || 'Badge'}</Text>
+    <Text style={[styles.achievementName, { color: theme.primaryText }]}>
+      {achievement?.name || 'Badge'}
+    </Text>
   </View>
 );
 
-const EmissionChart = ({ data }) => {
+const EmissionChart = ({ data, theme, isDarkMode }) => {
   const maxValue = data ? Math.max(...data) : 10;
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   
   return (
-    <View style={styles.chartContainer}>
+    <View style={[
+      styles.chartContainer,
+      {
+        backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider,
+        borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+      }
+    ]}>
       <View style={styles.chartHeader}>
-        <Text style={styles.chartText}>📊 Weekly Emissions</Text>
-        <Text style={styles.chartAverage}>
+        <Text style={[styles.chartText, { color: theme.accentText }]}>📊 Weekly Emissions</Text>
+        <Text style={[styles.chartAverage, { color: theme.secondaryText }]}>
           {data ? `Avg: ${(data.reduce((a, b) => a + b, 0) / data.length).toFixed(1)}kg` : 'No data'}
         </Text>
       </View>
@@ -49,25 +70,34 @@ const EmissionChart = ({ data }) => {
         <View style={styles.chartBars}>
           {data.map((value, index) => (
             <View key={index} style={styles.barContainer}>
-              <View style={styles.barWrapper}>
+              <View style={[
+                styles.barWrapper,
+                { backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider }
+              ]}>
                 <View 
                   style={[
                     styles.bar, 
                     { 
                       height: `${(value / maxValue) * 100}%`,
-                      backgroundColor: value > 8 ? '#EF4444' : value > 6 ? '#F59E0B' : '#10B981'
+                      backgroundColor: value > 8 ? '#EF4444' : value > 6 ? '#F59E0B' : theme.accentText
                     }
                   ]} 
                 />
               </View>
-              <Text style={styles.barValue}>{value.toFixed(1)}</Text>
-              <Text style={styles.barLabel}>{days[index]}</Text>
+              <Text style={[styles.barValue, { color: theme.primaryText }]}>
+                {value.toFixed(1)}
+              </Text>
+              <Text style={[styles.barLabel, { color: theme.secondaryText }]}>
+                {days[index]}
+              </Text>
             </View>
           ))}
         </View>
       ) : (
         <View style={styles.noDataContainer}>
-          <Text style={styles.noDataText}>No emission data available</Text>
+          <Text style={[styles.noDataText, { color: theme.secondaryText }]}>
+            No emission data available
+          </Text>
         </View>
       )}
     </View>
@@ -75,6 +105,8 @@ const EmissionChart = ({ data }) => {
 };
 
 export default function HomeScreen() {
+  const { theme, isDarkMode } = useTheme();
+  
   // Local state instead of Zustand to avoid store issues
   const [dailyEmissions, setDailyEmissions] = useState(7.5);
   const [achievements, setAchievements] = useState([
@@ -116,14 +148,12 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Error loading user data:', error);
-      // Fallback - still show the screen
       setUserName('EcoWarrior');
     }
   };
 
   const loadAchievements = async () => {
     try {
-      // Simple achievements loading
       setRecentAchievements(achievements.slice(0, 3));
     } catch (error) {
       console.error('Error loading achievements:', error);
@@ -145,18 +175,12 @@ export default function HomeScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Add to Supabase
         await addEmission(user.id, selectedCategory, amount);
-        
-        // Update local state
         setDailyEmissions(prev => prev + amount);
-        setTokens(prev => prev + 5); // Reward tokens
-        
-        // Reset form and close modal
+        setTokens(prev => prev + 5);
         setEmissionAmount('');
         setSelectedCategory('');
         setModalVisible(false);
-        
         Alert.alert('Success', 'Emission logged successfully!');
       }
     } catch (error) {
@@ -176,83 +200,119 @@ export default function HomeScreen() {
     <TouchableOpacity
       style={[
         styles.categoryItem,
-        selectedCategory === item.id && styles.selectedCategory
+        {
+          backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.cardBackground,
+          borderColor: selectedCategory === item.id ? theme.accentText : theme.border,
+        },
+        selectedCategory === item.id && {
+          backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5',
+        }
       ]}
       onPress={() => setSelectedCategory(item.id)}
     >
       <Text style={styles.categoryEmoji}>{item.emoji}</Text>
-      <Text style={styles.categoryName}>{item.name}</Text>
+      <Text style={[
+        styles.categoryName,
+        { color: selectedCategory === item.id ? theme.accentText : theme.primaryText }
+      ]}>
+        {item.name}
+      </Text>
     </TouchableOpacity>
   );
 
+  // Create dynamic styles based on theme
+  const dynamicStyles = createDynamicStyles(theme, isDarkMode);
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
       
-      {/* Background Image */}
-      <ImageBackground 
-        source={BACKGROUND_IMAGE} 
-        resizeMode="cover" 
-        style={StyleSheet.absoluteFillObject}
-      />
-      
-      {/* Overlay */}
-      <View style={[StyleSheet.absoluteFillObject, styles.overlay]} />
+      {/* Background Image - only show in dark mode */}
+      {isDarkMode && (
+        <>
+          <ImageBackground 
+            source={BACKGROUND_IMAGE} 
+            resizeMode="cover" 
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.overlayBackground }]} />
+        </>
+      )}
 
       {/* Content */}
       <ScrollView 
         style={styles.scrollContainer} 
         showsVerticalScrollIndicator={true}
-        indicatorStyle="white"
+        indicatorStyle={isDarkMode ? "white" : "black"}
         scrollIndicatorInsets={{ right: 1 }}
         contentContainerStyle={styles.scrollContent}
       >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.greeting}>Hello, {userName}! 👋</Text>
-            <Text style={styles.subGreeting}>
+            <Text style={[styles.greeting, { color: theme.primaryText }]}>
+              Hello, {userName}! 👋
+            </Text>
+            <Text style={[styles.subGreeting, { color: theme.secondaryText }]}>
               Let's track your carbon footprint
             </Text>
           </View>
-          <StreakCounter streak={streak} />
+          <StreakCounter streak={streak} theme={theme} isDarkMode={isDarkMode} />
         </View>
 
         {/* Stats Row */}
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{dailyEmissions.toFixed(1)}</Text>
-            <Text style={styles.statLabel}>kg CO₂ Today</Text>
+          <View style={[dynamicStyles.statCard]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>
+              {dailyEmissions.toFixed(1)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+              kg CO₂ Today
+            </Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{tokens}</Text>
-            <Text style={styles.statLabel}>Tokens</Text>
+          <View style={[dynamicStyles.statCard]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>
+              {tokens}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+              Tokens
+            </Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{achievements.length}</Text>
-            <Text style={styles.statLabel}>Badges</Text>
+          <View style={[dynamicStyles.statCard]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>
+              {achievements.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+              Badges
+            </Text>
           </View>
         </View>
 
         {/* Quick Add Button */}
         <TouchableOpacity 
-          style={styles.quickAddButton}
+          style={[dynamicStyles.quickAddButton]}
           onPress={() => setModalVisible(true)}
         >
-          <Text style={styles.quickAddText}>+ Log Emission</Text>
+          <Text style={[styles.quickAddText, { color: theme.buttonText }]}>
+            + Log Emission
+          </Text>
         </TouchableOpacity>
 
         {/* Emissions Chart */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>This Week's Emissions</Text>
-          <EmissionChart data={weeklyData} />
+        <View style={[dynamicStyles.card]}>
+          <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
+            This Week's Emissions
+          </Text>
+          <EmissionChart data={weeklyData} theme={theme} isDarkMode={isDarkMode} />
         </View>
 
         {/* Progress Bar */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Daily Goal Progress</Text>
+        <View style={[dynamicStyles.card]}>
+          <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
+            Daily Goal Progress
+          </Text>
           <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
+            <View style={[styles.progressBar, { backgroundColor: theme.divider }]}>
               <View 
                 style={[
                   styles.progressFill, 
@@ -263,21 +323,25 @@ export default function HomeScreen() {
                 ]} 
               />
             </View>
-            <Text style={styles.goalText}>
+            <Text style={[styles.goalText, { color: theme.secondaryText }]}>
               {dailyEmissions.toFixed(1)} / 10kg CO₂e ({Math.round((dailyEmissions / 10) * 100)}%)
             </Text>
           </View>
         </View>
 
         {/* Recent Achievements */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your Achievements</Text>
+        <View style={[dynamicStyles.card]}>
+          <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
+            Your Achievements
+          </Text>
           <View style={styles.achievementsList}>
             {achievements.map((achievement, index) => (
               <AchievementBadge 
                 key={index} 
                 achievement={achievement} 
-                size="small" 
+                size="small"
+                theme={theme}
+                isDarkMode={isDarkMode}
               />
             ))}
           </View>
@@ -295,11 +359,21 @@ export default function HomeScreen() {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Log Emission</Text>
+          <View style={[
+            styles.modalContent,
+            {
+              backgroundColor: theme.cardBackground,
+              borderColor: isDarkMode ? theme.border : 'transparent',
+            }
+          ]}>
+            <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
+              Log Emission
+            </Text>
             
             {/* Categories */}
-            <Text style={styles.sectionTitle}>Select Category</Text>
+            <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
+              Select Category
+            </Text>
             <FlatList
               data={categories}
               renderItem={renderCategoryItem}
@@ -309,34 +383,55 @@ export default function HomeScreen() {
             />
             
             {/* Amount Input */}
-            <Text style={styles.sectionTitle}>Amount (kg CO₂e)</Text>
+            <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
+              Amount (kg CO₂e)
+            </Text>
             <TextInput
-              style={styles.amountInput}
+              style={[
+                styles.amountInput,
+                {
+                  backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider,
+                  color: theme.primaryText,
+                  borderColor: isDarkMode ? theme.border : theme.divider,
+                }
+              ]}
               value={emissionAmount}
               onChangeText={setEmissionAmount}
               placeholder="Enter amount..."
               keyboardType="numeric"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.secondaryText}
             />
             
             {/* Buttons */}
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={styles.cancelButton}
+                style={[
+                  styles.cancelButton,
+                  {
+                    backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider,
+                  }
+                ]}
                 onPress={() => {
                   setModalVisible(false);
                   setSelectedCategory('');
                   setEmissionAmount('');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: theme.secondaryText }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={styles.submitButton}
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: theme.buttonBackground }
+                ]}
                 onPress={submitEmission}
               >
-                <Text style={styles.submitButtonText}>Log Emission</Text>
+                <Text style={[styles.submitButtonText, { color: theme.buttonText }]}>
+                  Log Emission
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -346,14 +441,58 @@ export default function HomeScreen() {
   );
 }
 
+// Function to create dynamic styles based on theme
+const createDynamicStyles = (theme, isDarkMode) => ({
+  statCard: {
+    backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground,
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+    shadowColor: isDarkMode ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDarkMode ? 0 : 0.1,
+    shadowRadius: 3,
+    elevation: isDarkMode ? 0 : 3,
+  },
+  quickAddButton: {
+    backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.8)' : theme.buttonBackground,
+    borderRadius: 15,
+    marginHorizontal: 15,
+    marginVertical: 10,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: isDarkMode ? 'transparent' : theme.accentText,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: isDarkMode ? 0 : 0.3,
+    shadowRadius: 8,
+    elevation: isDarkMode ? 0 : 8,
+    borderWidth: isDarkMode ? 1 : 0,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
+  },
+  card: {
+    backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground,
+    borderRadius: 15,
+    marginHorizontal: 15,
+    marginVertical: 10,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+    shadowColor: isDarkMode ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDarkMode ? 0 : 0.1,
+    shadowRadius: 3,
+    elevation: isDarkMode ? 0 : 3,
+  },
+});
+
 // --- STYLES ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111827',
-  },
-  overlay: {
-    backgroundColor: 'rgba(17, 24, 39, 0.85)',
   },
   scrollContainer: {
     flex: 1,
@@ -374,28 +513,23 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#f0fdf4',
   },
   subGreeting: {
     fontSize: 16,
-    color: '#d1fae5',
     marginTop: 5,
   },
   
   // Streak Counter
   streakContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 16,
     padding: 12,
     alignItems: 'center',
     minWidth: 80,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
   streakNumber: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#10B981',
   },
   streakEmoji: {
     fontSize: 16,
@@ -403,7 +537,6 @@ const styles = StyleSheet.create({
   },
   streakLabel: {
     fontSize: 12,
-    color: '#FFFFFF',
     opacity: 0.8,
   },
 
@@ -413,66 +546,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     marginBottom: 20,
   },
-  statCard: {
-    backgroundColor: 'rgba(55, 65, 81, 0.7)',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4ade80',
   },
   statLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
     marginTop: 5,
     textAlign: 'center',
-  },
-  quickAddButton: {
-    backgroundColor: '#4ade80',
-    borderRadius: 15,
-    marginHorizontal: 15,
-    marginVertical: 10,
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#4ade80',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   quickAddText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#064e3b',
-  },
-  card: {
-    backgroundColor: 'rgba(55, 65, 81, 0.7)',
-    borderRadius: 15,
-    marginHorizontal: 15,
-    marginVertical: 10,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#F9FAFB',
     marginBottom: 15,
   },
   
   // Chart styles
   chartContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
     padding: 15,
+    borderWidth: 1,
   },
   chartHeader: {
     flexDirection: 'row',
@@ -481,12 +578,10 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   chartText: {
-    color: '#10B981',
     fontSize: 16,
     fontWeight: '600',
   },
   chartAverage: {
-    color: '#9CA3AF',
     fontSize: 12,
   },
   chartBars: {
@@ -505,7 +600,6 @@ const styles = StyleSheet.create({
     height: 80,
     width: 20,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 10,
     overflow: 'hidden',
   },
@@ -515,13 +609,11 @@ const styles = StyleSheet.create({
     minHeight: 5,
   },
   barValue: {
-    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '600',
     marginTop: 4,
   },
   barLabel: {
-    color: '#9CA3AF',
     fontSize: 10,
     marginTop: 2,
   },
@@ -531,7 +623,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noDataText: {
-    color: '#9CA3AF',
     fontSize: 14,
     fontStyle: 'italic',
   },
@@ -541,7 +632,6 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 6,
     overflow: 'hidden',
   },
@@ -551,7 +641,6 @@ const styles = StyleSheet.create({
   },
   goalText: {
     textAlign: 'center',
-    color: '#9CA3AF',
     fontSize: 14,
     marginTop: 10,
   },
@@ -563,14 +652,12 @@ const styles = StyleSheet.create({
   
   // Achievement Badge
   achievementBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',
     minWidth: 70,
     margin: 5,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
   achievementEmoji: {
     fontSize: 24,
@@ -578,7 +665,6 @@ const styles = StyleSheet.create({
   },
   achievementName: {
     fontSize: 10,
-    color: '#FFFFFF',
     textAlign: 'center',
     opacity: 0.9,
   },
@@ -595,39 +681,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
     borderRadius: 20,
     padding: 20,
     width: '90%',
     maxHeight: '80%',
+    borderWidth: 1,
   },
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
-    color: '#111827',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 10,
     marginTop: 15,
-    color: '#374151',
   },
   categoryItem: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
     borderRadius: 12,
     padding: 15,
     margin: 5,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  selectedCategory: {
-    backgroundColor: '#D1FAE5',
-    borderColor: '#10B981',
   },
   categoryEmoji: {
     fontSize: 30,
@@ -636,16 +714,12 @@ const styles = StyleSheet.create({
   categoryName: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
   },
   amountInput: {
-    backgroundColor: '#F3F4F6',
     borderRadius: 12,
     padding: 15,
     fontSize: 16,
-    color: '#111827',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
   },
   modalButtons: {
     flexDirection: 'row',
@@ -655,7 +729,6 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
     borderRadius: 12,
     padding: 15,
     alignItems: 'center',
@@ -663,11 +736,9 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
   },
   submitButton: {
     flex: 1,
-    backgroundColor: '#10B981',
     borderRadius: 12,
     padding: 15,
     alignItems: 'center',
@@ -675,6 +746,5 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: 'white',
   },
 });

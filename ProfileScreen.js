@@ -11,10 +11,13 @@ import {
   Switch,
 } from 'react-native';
 import { supabase, signOut } from './src/api/supabase';
+import { useTheme } from './src/context/ThemeContext';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
 export default function ProfileScreen() {
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+  
   // Local state for profile data
   const [user, setUser] = useState(null);
   const [dailyEmissions, setDailyEmissions] = useState(0.0);
@@ -27,7 +30,6 @@ export default function ProfileScreen() {
   
   // Settings state
   const [pushNotifications, setPushNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(true); // Default to dark mode since your app uses dark theme
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -51,8 +53,7 @@ export default function ProfileScreen() {
 
   const loadEmissionData = async () => {
     try {
-      // In a real app, you'd fetch this from your database
-      // For now, using mock data that matches your screenshot
+      // Mock data that matches your screenshot
       setDailyEmissions(0.0);
       setWeeklyEmissions(0);
       setMonthlyEmissions(0);
@@ -89,12 +90,11 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleDarkModeToggle = (value) => {
-    setDarkMode(value);
-    // In a real app, you'd save this preference and update your app theme
+  const handleDarkModeToggle = () => {
+    toggleTheme();
     Alert.alert(
-      'Dark Mode', 
-      value ? 'Dark mode enabled' : 'Dark mode disabled',
+      'Theme Changed', 
+      isDarkMode ? 'Switched to Light Mode' : 'Switched to Dark Mode',
       [{ text: 'OK' }]
     );
   };
@@ -115,7 +115,6 @@ export default function ProfileScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Export', onPress: () => {
-          // In a real app, implement data export functionality
           Alert.alert('Success', 'Data export feature coming soon!');
         }}
       ]
@@ -132,128 +131,137 @@ export default function ProfileScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <Text style={[styles.loadingText, { color: theme.accentText }]}>Loading...</Text>
       </View>
     );
   }
 
+  // Create dynamic styles based on theme
+  const dynamicStyles = createDynamicStyles(theme, isDarkMode);
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
-      {/* Background Image */}
-      <ImageBackground 
-        source={BACKGROUND_IMAGE} 
-        resizeMode="cover" 
-        style={StyleSheet.absoluteFillObject}
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar 
+        barStyle={theme.statusBarStyle} 
+        backgroundColor="transparent" 
+        translucent 
       />
       
-      {/* Overlay */}
-      <View style={[StyleSheet.absoluteFillObject, styles.overlay]} />
+      {/* Background Image - only show in dark mode */}
+      {isDarkMode && (
+        <>
+          <ImageBackground 
+            source={BACKGROUND_IMAGE} 
+            resizeMode="cover" 
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.overlayBackground }]} />
+        </>
+      )}
 
       {/* Content */}
       <ScrollView 
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={true}
-        indicatorStyle="white"
+        indicatorStyle={isDarkMode ? "white" : "black"}
         contentContainerStyle={styles.scrollContent}
       >
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getUserInitial()}</Text>
+            <View style={[dynamicStyles.avatar]}>
+              <Text style={[styles.avatarText, { color: theme.buttonText }]}>{getUserInitial()}</Text>
             </View>
           </View>
-          <Text style={styles.userName}>{getUserName()}</Text>
-          <Text style={styles.userEmail}>{user?.email}</Text>
-          <View style={styles.badgeContainer}>
-            <Text style={styles.badgeText}>🌱 Eco Hero</Text>
+          <Text style={[styles.userName, { color: theme.primaryText }]}>{getUserName()}</Text>
+          <Text style={[styles.userEmail, { color: theme.secondaryText }]}>{user?.email}</Text>
+          <View style={[dynamicStyles.badgeContainer]}>
+            <Text style={[styles.badgeText, { color: theme.accentText }]}>🌱 Eco Hero</Text>
           </View>
         </View>
 
         {/* Emission Stats Grid */}
         <View style={styles.statsSection}>
           <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{dailyEmissions.toFixed(1)}</Text>
-              <Text style={styles.statLabel}>Today (kg)</Text>
+            <View style={[dynamicStyles.statCard]}>
+              <Text style={[styles.statValue, { color: theme.accentText }]}>{dailyEmissions.toFixed(1)}</Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Today (kg)</Text>
             </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{weeklyEmissions}</Text>
-              <Text style={styles.statLabel}>This Week</Text>
+            <View style={[dynamicStyles.statCard]}>
+              <Text style={[styles.statValue, { color: theme.accentText }]}>{weeklyEmissions}</Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>This Week</Text>
             </View>
           </View>
           
           <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{monthlyEmissions}</Text>
-              <Text style={styles.statLabel}>This Month</Text>
+            <View style={[dynamicStyles.statCard]}>
+              <Text style={[styles.statValue, { color: theme.accentText }]}>{monthlyEmissions}</Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>This Month</Text>
             </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{allTimeEmissions}</Text>
-              <Text style={styles.statLabel}>All Time</Text>
+            <View style={[dynamicStyles.statCard]}>
+              <Text style={[styles.statValue, { color: theme.accentText }]}>{allTimeEmissions}</Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>All Time</Text>
             </View>
           </View>
         </View>
 
         {/* Progress Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>Your Progress</Text>
           <View style={styles.progressRow}>
-            <View style={styles.progressCard}>
+            <View style={[dynamicStyles.progressCard]}>
               <Text style={styles.progressEmoji}>🔥</Text>
-              <Text style={styles.progressValue}>{streak}</Text>
-              <Text style={styles.progressLabel}>Day Streak</Text>
+              <Text style={[styles.progressValue, { color: theme.accentText }]}>{streak}</Text>
+              <Text style={[styles.progressLabel, { color: theme.secondaryText }]}>Day Streak</Text>
             </View>
-            <View style={styles.progressCard}>
+            <View style={[dynamicStyles.progressCard]}>
               <Text style={styles.progressEmoji}>💰</Text>
-              <Text style={styles.progressValue}>{tokens}</Text>
-              <Text style={styles.progressLabel}>Tokens</Text>
+              <Text style={[styles.progressValue, { color: theme.accentText }]}>{tokens}</Text>
+              <Text style={[styles.progressLabel, { color: theme.secondaryText }]}>Tokens</Text>
             </View>
-            <View style={styles.progressCard}>
+            <View style={[dynamicStyles.progressCard]}>
               <Text style={styles.progressEmoji}>🏆</Text>
-              <Text style={styles.progressValue}>{achievements}</Text>
-              <Text style={styles.progressLabel}>Achievements</Text>
+              <Text style={[styles.progressValue, { color: theme.accentText }]}>{achievements}</Text>
+              <Text style={[styles.progressLabel, { color: theme.secondaryText }]}>Achievements</Text>
             </View>
           </View>
         </View>
 
         {/* Settings Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
+          <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>Settings</Text>
           
-          <View style={styles.settingItem}>
-            <Text style={styles.settingText}>Push Notifications</Text>
+          <View style={[dynamicStyles.settingItem]}>
+            <Text style={[styles.settingText, { color: theme.primaryText }]}>Push Notifications</Text>
             <Switch
-              trackColor={{ false: '#767577', true: '#10B981' }}
+              trackColor={{ false: '#767577', true: theme.accentText }}
               thumbColor={pushNotifications ? '#FFFFFF' : '#f4f3f4'}
               onValueChange={handlePushNotificationToggle}
               value={pushNotifications}
             />
           </View>
 
-          <View style={styles.settingItem}>
-            <Text style={styles.settingText}>Dark Mode</Text>
+          <View style={[dynamicStyles.settingItem]}>
+            <Text style={[styles.settingText, { color: theme.primaryText }]}>Dark Mode</Text>
             <Switch
-              trackColor={{ false: '#767577', true: '#10B981' }}
-              thumbColor={darkMode ? '#FFFFFF' : '#f4f3f4'}
+              trackColor={{ false: '#767577', true: theme.accentText }}
+              thumbColor={isDarkMode ? '#FFFFFF' : '#f4f3f4'}
               onValueChange={handleDarkModeToggle}
-              value={darkMode}
+              value={isDarkMode}
             />
           </View>
         </View>
 
         {/* Export Data Button */}
-        <TouchableOpacity style={styles.exportButton} onPress={handleExportData}>
+        <TouchableOpacity style={[dynamicStyles.exportButton]} onPress={handleExportData}>
           <Text style={styles.exportIcon}>📊</Text>
-          <Text style={styles.exportText}>Export My Data</Text>
+          <Text style={[styles.exportText, { color: theme.buttonText }]}>Export My Data</Text>
         </TouchableOpacity>
 
         {/* Sign Out Button */}
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
+        <TouchableOpacity style={[dynamicStyles.signOutButton]} onPress={handleSignOut}>
+          <Text style={[styles.signOutText, { color: theme.buttonText }]}>Sign Out</Text>
         </TouchableOpacity>
 
         {/* Bottom spacing */}
@@ -263,22 +271,106 @@ export default function ProfileScreen() {
   );
 }
 
+// Function to create dynamic styles based on theme
+const createDynamicStyles = (theme, isDarkMode) => ({
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: theme.accentText,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : theme.border,
+  },
+  badgeContainer: {
+    backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : theme.accentText,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.15)' : theme.cardBackground,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginHorizontal: 7.5,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+    shadowColor: isDarkMode ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDarkMode ? 0 : 0.1,
+    shadowRadius: 3,
+    elevation: isDarkMode ? 0 : 3,
+  },
+  progressCard: {
+    flex: 1,
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.15)' : theme.cardBackground,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+    shadowColor: isDarkMode ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDarkMode ? 0 : 0.1,
+    shadowRadius: 3,
+    elevation: isDarkMode ? 0 : 3,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.15)' : theme.cardBackground,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
+    shadowColor: isDarkMode ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDarkMode ? 0 : 0.1,
+    shadowRadius: 3,
+    elevation: isDarkMode ? 0 : 3,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.8)' : '#3B82F6',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(59, 130, 246, 0.3)' : '#3B82F6',
+  },
+  signOutButton: {
+    backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.8)' : '#EF4444',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#EF4444',
+  },
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111827',
-  },
-  overlay: {
-    backgroundColor: 'rgba(17, 24, 39, 0.85)',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#111827',
   },
   loadingText: {
-    color: '#10B981',
     fontSize: 18,
   },
   scrollContainer: {
@@ -297,42 +389,20 @@ const styles = StyleSheet.create({
   avatarContainer: {
     marginBottom: 15,
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#10B981',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
   avatarText: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   userName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginBottom: 5,
   },
   userEmail: {
     fontSize: 16,
-    color: '#9CA3AF',
     marginBottom: 15,
   },
-  badgeContainer: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
   badgeText: {
-    color: '#10B981',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -346,25 +416,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 15,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    marginHorizontal: 7.5,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
   statValue: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#10B981',
     marginBottom: 5,
   },
   statLabel: {
     fontSize: 14,
-    color: '#9CA3AF',
     textAlign: 'center',
   },
 
@@ -376,22 +434,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginBottom: 20,
   },
   progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  progressCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    marginHorizontal: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   progressEmoji: {
     fontSize: 32,
@@ -400,46 +447,20 @@ const styles = StyleSheet.create({
   progressValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#10B981',
     marginBottom: 5,
   },
   progressLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
     textAlign: 'center',
   },
 
   // Settings
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
   settingText: {
     fontSize: 16,
-    color: '#FFFFFF',
     fontWeight: '500',
   },
 
   // Export Button
-  exportButton: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(59, 130, 246, 0.8)',
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
-  },
   exportIcon: {
     fontSize: 20,
     marginRight: 10,
@@ -447,24 +468,12 @@ const styles = StyleSheet.create({
   exportText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
 
   // Sign Out Button
-  signOutButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.8)',
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
   signOutText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
   },
 
   bottomSpacing: {

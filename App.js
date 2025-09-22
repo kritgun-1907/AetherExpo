@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react'; // Corrected import
+// App.js - Complete Updated Version with Theme Support
+
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,7 +9,10 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 
-// Import ALL your screens
+// 🔥 STEP 1: Import Theme Provider (NEW IMPORT)
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+
+// Import ALL your screens (same as before)
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
@@ -15,14 +20,14 @@ import HomeScreen from './HomeScreen';
 import TrackingScreen from './TrackingScreen';
 import ProfileScreen from './ProfileScreen'; 
 
-// Import Supabase
+// Import Supabase (same as before)
 import { supabase } from './src/api/supabase';
 
 const prefix = Linking.createURL('/');
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// AuthStack to manage login, register, and forgot password flows
+// AuthStack (unchanged)
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -33,8 +38,11 @@ function AuthStack() {
   );
 }
 
-// Main Tab Navigator (remains the same)
+// 🔥 STEP 2: Update MainTabs to use theme colors
 function MainTabs() {
+  // Get theme data using the hook
+  const { theme, isDarkMode } = useTheme();
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -51,8 +59,17 @@ function MainTabs() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#10B981',
-        tabBarInactiveTintColor: '#6B7280',
+        // 🔥 STEP 3: Use theme colors instead of hardcoded colors
+        tabBarActiveTintColor: theme.tabBarActive,      // Green in both modes
+        tabBarInactiveTintColor: theme.tabBarInactive,  // Gray -> Light gray
+        tabBarStyle: {
+          backgroundColor: theme.tabBarBackground,      // White -> Dark gray
+          borderTopColor: theme.tabBarBorder,          // Light -> Dark border
+          borderTopWidth: 1,
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
         headerShown: false,
       })}
     >
@@ -63,10 +80,11 @@ function MainTabs() {
   );
 }
 
-
-export default function App() {
+// 🔥 STEP 4: Create AppContent component that uses theme
+function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const { theme } = useTheme(); // Get theme for loading screen
 
   const linking = {
     prefixes: [prefix],
@@ -76,43 +94,58 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 1. Check the initial session state
+    // Check the initial session state
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
       setIsLoading(false);
     });
 
-    // 2. Set up the real-time listener for auth changes
+    // Set up the real-time listener for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
     });
 
-    // 3. Cleanup the listener when the app closes
+    // Cleanup the listener when the app closes
     return () => {
       authListener.subscription.unsubscribe();
     };
   }, []);
 
+  // 🔥 STEP 5: Use theme colors in loading screen
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#10B981" />
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: theme.background    // Theme-aware background
+      }}>
+        <ActivityIndicator size="large" color={theme.accentText} />
       </View>
     );
   }
 
   return (
+    <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {isLoggedIn ? (
+          <Stack.Screen name="Main" component={MainTabs} />
+        ) : (
+          <Stack.Screen name="Auth" component={AuthStack} />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+// 🔥 STEP 6: Wrap everything with ThemeProvider
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {isLoggedIn ? (
-            <Stack.Screen name="Main" component={MainTabs} />
-          ) : (
-            // Use the AuthStack which now includes Login, Register, and ForgotPassword
-            <Stack.Screen name="Auth" component={AuthStack} />
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
+      {/* This is the key change - wrapping with ThemeProvider */}
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
