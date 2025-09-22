@@ -7,23 +7,22 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 
-const prefix = Linking.createURL('/');
 // Import your screens
 import LoginScreen from './LoginScreen';
 import HomeScreen from './HomeScreen';
 import TrackingScreen from './TrackingScreen';
-// You will need to create this ProfileScreen file as well
 import ProfileScreen from './ProfileScreen'; 
-
 
 // Import Supabase
 import { supabase } from './src/api/supabase';
 
+const prefix = Linking.createURL('/');
+
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Tab Navigator for main app
 function MainTabs() {
+  // ... (This function remains the same)
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -56,30 +55,34 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  
-  // 3. Create the linking configuration object
   const linking = {
     prefixes: [prefix],
     config: {
-      screens: {
-        // You can map URLs to specific screens here if needed
-      },
+      screens: {},
     },
   };
 
   useEffect(() => {
-    checkUser();
-  }, []);
-
-  async function checkUser() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
+    // Check the current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-    }
-    setIsLoading(false);
-  }
+      setIsLoading(false);
+    });
+
+    // *** THIS IS THE NEW CODE TO ADD ***
+    // Listen for authentication state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsLoggedIn(!!session);
+      if (event === 'PASSWORD_RECOVERY') {
+        // Handle password recovery event if needed
+      }
+    });
+
+    // Cleanup the listener when the component unmounts
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -91,9 +94,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-       {/* 4. Add the 'linking' prop to the NavigationContainer */}
-      <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}></NavigationContainer>
-      <NavigationContainer>
+      <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isLoggedIn ? (
             <Stack.Screen name="Main" component={MainTabs} />
@@ -107,4 +108,3 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
-
