@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // Corrected import
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,8 +7,10 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 
-// Import your screens
+// Import ALL your screens
 import LoginScreen from './LoginScreen';
+import RegisterScreen from './src/screens/auth/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
 import HomeScreen from './HomeScreen';
 import TrackingScreen from './TrackingScreen';
 import ProfileScreen from './ProfileScreen'; 
@@ -17,12 +19,22 @@ import ProfileScreen from './ProfileScreen';
 import { supabase } from './src/api/supabase';
 
 const prefix = Linking.createURL('/');
-
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// AuthStack to manage login, register, and forgot password flows
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// Main Tab Navigator (remains the same)
 function MainTabs() {
-  // ... (This function remains the same)
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -51,6 +63,7 @@ function MainTabs() {
   );
 }
 
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,22 +76,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Check the current session
+    // 1. Check the initial session state
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
       setIsLoading(false);
     });
 
-    // *** THIS IS THE NEW CODE TO ADD ***
-    // Listen for authentication state changes
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    // 2. Set up the real-time listener for auth changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
-      if (event === 'PASSWORD_RECOVERY') {
-        // Handle password recovery event if needed
-      }
     });
 
-    // Cleanup the listener when the component unmounts
+    // 3. Cleanup the listener when the app closes
     return () => {
       authListener.subscription.unsubscribe();
     };
@@ -99,9 +108,8 @@ export default function App() {
           {isLoggedIn ? (
             <Stack.Screen name="Main" component={MainTabs} />
           ) : (
-            <Stack.Screen name="Login">
-              {props => <LoginScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
-            </Stack.Screen>
+            // Use the AuthStack which now includes Login, Register, and ForgotPassword
+            <Stack.Screen name="Auth" component={AuthStack} />
           )}
         </Stack.Navigator>
       </NavigationContainer>

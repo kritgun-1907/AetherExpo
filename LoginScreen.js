@@ -12,44 +12,20 @@ import {
   Image,
   ImageBackground,
 } from 'react-native';
-import { supabase, signIn, signUp } from './src/api/supabase';
-import ParticleContainer from './src/components/ParticleContainer'; // 1. Import the new component
+import { supabase, signIn } from './src/api/supabase'; // We only need signIn here
+import ParticleContainer from './src/components/ParticleContainer';
 
 // Define paths for your assets
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 const LOGO_IMAGE = require('./assets/logo-transparent.png');
 
-export default function LoginScreen({ setIsLoggedIn }) {
+// Note: navigation is now a prop
+export default function LoginScreen({ navigation }) { 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ... (Your handleSignUp and handleSignIn functions remain the same)
-    const validateEmail = (email) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(email);
-  };
-
-  const handleSignUp = async () => {
-    if (!validateEmail(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password should be at least 6 characters.');
-      return;
-    }
-
-    setLoading(true);
-    const { error } = await signUp(email, password);
-    if (error) {
-      Alert.alert('Sign Up Failed', error.message);
-    } else {
-      Alert.alert('Success!', 'Please check your email to confirm your account.');
-    }
-    setLoading(false);
-  };
-  
+  // Sign In is the primary action on this screen now
   const handleSignIn = async () => {
     if (!email || !password) {
         Alert.alert('Error', 'Email and password cannot be empty.');
@@ -60,9 +36,8 @@ export default function LoginScreen({ setIsLoggedIn }) {
     const { data, error } = await signIn(email, password);
     if (error) {
         Alert.alert('Sign In Failed', error.message);
-    } else if (data.user) {
-        setIsLoggedIn(true);
     }
+    // The onAuthStateChange listener in App.js will handle setting isLoggedIn
     setLoading(false);
   };
 
@@ -76,7 +51,6 @@ export default function LoginScreen({ setIsLoggedIn }) {
         resizeMode="cover" 
         style={styles.backgroundImage}
       >
-        {/* 2. Add the ParticleContainer here */}
         <ParticleContainer /> 
 
         <View style={styles.overlay}>
@@ -112,12 +86,19 @@ export default function LoginScreen({ setIsLoggedIn }) {
               <ActivityIndicator size="large" color="#4ade80" style={{ marginVertical: 20 }} />
             ) : (
               <>
-                <TouchableOpacity style={styles.button} onPress={handleSignUp}>
-                  <Text style={styles.buttonText}>Sign Up</Text>
+                <TouchableOpacity style={styles.button} onPress={handleSignIn}>
+                  <Text style={styles.buttonText}>Sign In</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.button, styles.signInButton]} onPress={handleSignIn}>
-                  <Text style={styles.signInButtonText}>Sign In</Text>
-                </TouchableOpacity>
+
+                {/* LINKS TO OTHER SCREENS */}
+                <View style={styles.linksContainer}>
+                  <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                    <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+                    <Text style={styles.linkText}>Forgot Password?</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </View>
@@ -127,7 +108,7 @@ export default function LoginScreen({ setIsLoggedIn }) {
   );
 }
 
-// Styles remain the same
+// Add/update these styles in your StyleSheet
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -187,14 +168,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  signInButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#4ade80',
+  // New styles for the links
+  linksContainer: {
+    marginTop: 15,
+    alignItems: 'center',
   },
-  signInButtonText: {
+  linkText: {
     color: '#4ade80',
-    fontSize: 18,
-    fontWeight: 'bold',
+    paddingVertical: 10,
+    fontSize: 14,
   },
 });
