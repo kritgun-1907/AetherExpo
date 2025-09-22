@@ -5,7 +5,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 
+const prefix = Linking.createURL('/');
 // Import your screens
 import LoginScreen from './LoginScreen';
 import HomeScreen from './HomeScreen';
@@ -54,6 +56,17 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  
+  // 3. Create the linking configuration object
+  const linking = {
+    prefixes: [prefix],
+    config: {
+      screens: {
+        // You can map URLs to specific screens here if needed
+      },
+    },
+  };
+
   useEffect(() => {
     checkUser();
   }, []);
@@ -78,6 +91,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+       {/* 4. Add the 'linking' prop to the NavigationContainer */}
+      <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}></NavigationContainer>
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isLoggedIn ? (
@@ -92,3 +107,4 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
