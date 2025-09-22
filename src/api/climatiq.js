@@ -1,46 +1,30 @@
-import axios from 'axios';
-import { CLIMATIQ_API_KEY } from '@env';
+// src/api/climatiq.js
+const CLIMATIQ_API_KEY = '36MH766FPN409EJQD4V7PS0PEW';
 
-const climatiqAPI = axios.create({
-  baseURL: 'https://beta4.api.climatiq.io',
-  headers: {
-    'Authorization': `Bearer ${CLIMATIQ_API_KEY}`,
-    'Content-Type': 'application/json'
-  }
-});
-
-export const calculateTransportEmissions = async (mode, distance) => {
+export const calculateRealEmissions = async (activity, value) => {
   try {
-    const response = await climatiqAPI.post('/estimate', {
-      emission_factor: {
-        activity_id: `passenger_vehicle-vehicle_type_${mode}`,
+    const response = await fetch('https://beta3.api.climatiq.io/estimate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CLIMATIQ_API_KEY}`,
+        'Content-Type': 'application/json',
       },
-      parameters: {
-        distance: distance,
-        distance_unit: 'km'
-      }
+      body: JSON.stringify({
+        emission_factor: {
+          activity_id: activity,
+        },
+        parameters: {
+          distance: value,
+          distance_unit: 'km'
+        }
+      })
     });
-    return response.data;
+    
+    const data = await response.json();
+    return data.co2e || 0;
   } catch (error) {
-    console.error('Climatiq API Error:', error);
-    return null;
-  }
-};
-
-export const calculateFoodEmissions = async (foodType, quantity) => {
-  try {
-    const response = await climatiqAPI.post('/estimate', {
-      emission_factor: {
-        activity_id: `consumer_goods-type_${foodType}`,
-      },
-      parameters: {
-        weight: quantity,
-        weight_unit: 'kg'
-      }
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Food emission calculation error:', error);
-    return null;
+    console.error('Climatiq error:', error);
+    // Fallback to local calculation
+    return value * 0.21; // Average car emissions
   }
 };

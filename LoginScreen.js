@@ -13,7 +13,7 @@ import {
   ImageBackground,
 } from 'react-native';
 import { supabase, signIn } from './src/api/supabase'; // We only need signIn here
-import ParticleContainer from './src/components/ParticleContainer';
+// import ParticleContainer from './src/components/ParticleContainer';
 
 // Define paths for your assets
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
@@ -51,7 +51,7 @@ export default function LoginScreen({ navigation }) {
         resizeMode="cover" 
         style={styles.backgroundImage}
       >
-        <ParticleContainer /> 
+        {/* <ParticleContainer />  */}
 
         <View style={styles.overlay}>
           <View style={styles.header}>
