@@ -1,57 +1,67 @@
-// ProfileScreen.js
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView,
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
   Alert,
-  Switch 
+  ScrollView,
+  ImageBackground,
+  StatusBar,
+  Switch,
 } from 'react-native';
-import { supabase } from './src/api/supabase';
-import { useCarbonStore } from './src/store/carbonStore';
-import AchievementBadge from './src/components/gamification/AchievementBadge';
-import { getUserAchievements } from './src/services/AchievementService';
+import { supabase, signOut } from './src/api/supabase';
 
-export default function ProfileScreen({ navigation }) {
+const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
+
+export default function ProfileScreen() {
+  // Local state for profile data
   const [user, setUser] = useState(null);
-  const [allAchievements, setAllAchievements] = useState([]);
-  const [totalEmissions, setTotalEmissions] = useState(0);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const [dailyEmissions, setDailyEmissions] = useState(0.0);
+  const [weeklyEmissions, setWeeklyEmissions] = useState(0);
+  const [monthlyEmissions, setMonthlyEmissions] = useState(0);
+  const [allTimeEmissions, setAllTimeEmissions] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [tokens, setTokens] = useState(0);
+  const [achievements, setAchievements] = useState(0);
   
-  const { 
-    dailyEmissions, 
-    weeklyEmissions,
-    monthlyEmissions,
-    tokens, 
-    streak 
-  } = useCarbonStore();
+  // Settings state
+  const [pushNotifications, setPushNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(true); // Default to dark mode since your app uses dark theme
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchUserData();
+    loadUserData();
+    loadEmissionData();
   }, []);
 
-  const fetchUserData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    setUser(user);
-    
-    if (user) {
-      // Load all achievements
-      const achievements = await getUserAchievements(user.id);
-      setAllAchievements(achievements);
-      
-      // Calculate total emissions
-      const { data } = await supabase
-        .from('emissions')
-        .select('amount')
-        .eq('user_id', user.id);
-      
-      if (data) {
-        const total = data.reduce((sum, emission) => sum + emission.amount, 0);
-        setTotalEmissions(total);
+  const loadUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUser(user);
+        console.log('Profile user data loaded:', user.email);
       }
+    } catch (error) {
+      console.error('Error loading user:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadEmissionData = async () => {
+    try {
+      // In a real app, you'd fetch this from your database
+      // For now, using mock data that matches your screenshot
+      setDailyEmissions(0.0);
+      setWeeklyEmissions(0);
+      setMonthlyEmissions(0);
+      setAllTimeEmissions(0);
+      setStreak(0);
+      setTokens(0);
+      setAchievements(0);
+    } catch (error) {
+      console.error('Error loading emission data:', error);
     }
   };
 
@@ -65,343 +75,399 @@ export default function ProfileScreen({ navigation }) {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.auth.signOut();
-            if (error) {
-              Alert.alert('Error', error.message);
+            try {
+              const { error } = await signOut();
+              if (error) {
+                Alert.alert('Error', 'Failed to sign out');
+              }
+            } catch (error) {
+              console.error('Sign out error:', error);
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
 
-  const handleExportData = async () => {
+  const handleDarkModeToggle = (value) => {
+    setDarkMode(value);
+    // In a real app, you'd save this preference and update your app theme
+    Alert.alert(
+      'Dark Mode', 
+      value ? 'Dark mode enabled' : 'Dark mode disabled',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handlePushNotificationToggle = (value) => {
+    setPushNotifications(value);
+    Alert.alert(
+      'Push Notifications', 
+      value ? 'Push notifications enabled' : 'Push notifications disabled',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleExportData = () => {
     Alert.alert(
       'Export Data',
-      'Your carbon tracking data will be sent to your email.',
+      'Your emission data will be exported to a CSV file.',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Export',
-          onPress: () => {
-            Alert.alert('Success', 'Data export sent to your email!');
-          }
-        }
+        { text: 'Export', onPress: () => {
+          // In a real app, implement data export functionality
+          Alert.alert('Success', 'Data export feature coming soon!');
+        }}
       ]
     );
   };
 
-  const getImpactLevel = () => {
-    if (monthlyEmissions < 100) return { level: 'Eco Hero', color: '#10B981' };
-    if (monthlyEmissions < 200) return { level: 'Green Warrior', color: '#F59E0B' };
-    return { level: 'Carbon Conscious', color: '#EF4444' };
+  const getUserInitial = () => {
+    return user?.email?.charAt(0).toUpperCase() || 'U';
   };
 
-  const impactLevel = getImpactLevel();
+  const getUserName = () => {
+    return user?.email?.split('@')[0] || 'User';
+  };
 
-  if (!user) {
+  if (isLoading) {
     return (
-      <View style={styles.container}>
-        <Text>Loading...</Text>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
-      </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      
+      {/* Background Image */}
+      <ImageBackground 
+        source={BACKGROUND_IMAGE} 
+        resizeMode="cover" 
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      {/* Overlay */}
+      <View style={[StyleSheet.absoluteFillObject, styles.overlay]} />
 
-      {/* User Info Card */}
-      <View style={styles.card}>
-        <View style={styles.userHeader}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user.email.charAt(0).toUpperCase()}
-            </Text>
+      {/* Content */}
+      <ScrollView 
+        style={styles.scrollContainer}
+        showsVerticalScrollIndicator={true}
+        indicatorStyle="white"
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getUserInitial()}</Text>
+            </View>
           </View>
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user.email.split('@')[0]}</Text>
-            <Text style={styles.userEmail}>{user.email}</Text>
-            <View style={styles.impactBadge}>
-              <Text style={[styles.impactLevel, { color: impactLevel.color }]}>
-                {impactLevel.level}
-              </Text>
+          <Text style={styles.userName}>{getUserName()}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+          <View style={styles.badgeContainer}>
+            <Text style={styles.badgeText}>🌱 Eco Hero</Text>
+          </View>
+        </View>
+
+        {/* Emission Stats Grid */}
+        <View style={styles.statsSection}>
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{dailyEmissions.toFixed(1)}</Text>
+              <Text style={styles.statLabel}>Today (kg)</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{weeklyEmissions}</Text>
+              <Text style={styles.statLabel}>This Week</Text>
+            </View>
+          </View>
+          
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{monthlyEmissions}</Text>
+              <Text style={styles.statLabel}>This Month</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{allTimeEmissions}</Text>
+              <Text style={styles.statLabel}>All Time</Text>
             </View>
           </View>
         </View>
-      </View>
 
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{dailyEmissions.toFixed(1)}</Text>
-          <Text style={styles.statLabel}>Today (kg)</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{weeklyEmissions.toFixed(0)}</Text>
-          <Text style={styles.statLabel}>This Week</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{monthlyEmissions.toFixed(0)}</Text>
-          <Text style={styles.statLabel}>This Month</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{totalEmissions.toFixed(0)}</Text>
-          <Text style={styles.statLabel}>All Time</Text>
-        </View>
-      </View>
-
-      {/* Gamification Stats */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Your Progress</Text>
-        <View style={styles.progressStats}>
-          <View style={styles.progressItem}>
-            <Text style={styles.progressIcon}>🔥</Text>
-            <Text style={styles.progressValue}>{streak}</Text>
-            <Text style={styles.progressLabel}>Day Streak</Text>
-          </View>
-          <View style={styles.progressItem}>
-            <Text style={styles.progressIcon}>💰</Text>
-            <Text style={styles.progressValue}>{tokens}</Text>
-            <Text style={styles.progressLabel}>Tokens</Text>
-          </View>
-          <View style={styles.progressItem}>
-            <Text style={styles.progressIcon}>🏆</Text>
-            <Text style={styles.progressValue}>{allAchievements.length}</Text>
-            <Text style={styles.progressLabel}>Achievements</Text>
+        {/* Progress Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <View style={styles.progressRow}>
+            <View style={styles.progressCard}>
+              <Text style={styles.progressEmoji}>🔥</Text>
+              <Text style={styles.progressValue}>{streak}</Text>
+              <Text style={styles.progressLabel}>Day Streak</Text>
+            </View>
+            <View style={styles.progressCard}>
+              <Text style={styles.progressEmoji}>💰</Text>
+              <Text style={styles.progressValue}>{tokens}</Text>
+              <Text style={styles.progressLabel}>Tokens</Text>
+            </View>
+            <View style={styles.progressCard}>
+              <Text style={styles.progressEmoji}>🏆</Text>
+              <Text style={styles.progressValue}>{achievements}</Text>
+              <Text style={styles.progressLabel}>Achievements</Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      {/* Achievements Section */}
-      {allAchievements.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your Achievements</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {allAchievements.map((achievement, index) => (
-              <AchievementBadge 
-                key={index} 
-                achievement={achievement} 
-                size="small" 
-              />
-            ))}
-          </ScrollView>
-        </View>
-      )}
+        {/* Settings Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingText}>Push Notifications</Text>
+            <Switch
+              trackColor={{ false: '#767577', true: '#10B981' }}
+              thumbColor={pushNotifications ? '#FFFFFF' : '#f4f3f4'}
+              onValueChange={handlePushNotificationToggle}
+              value={pushNotifications}
+            />
+          </View>
 
-      {/* Settings Section */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Settings</Text>
-        
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Push Notifications</Text>
-          <Switch
-            value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
-            trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-            thumbColor={notificationsEnabled ? '#10B981' : '#9CA3AF'}
-          />
+          <View style={styles.settingItem}>
+            <Text style={styles.settingText}>Dark Mode</Text>
+            <Switch
+              trackColor={{ false: '#767577', true: '#10B981' }}
+              thumbColor={darkMode ? '#FFFFFF' : '#f4f3f4'}
+              onValueChange={handleDarkModeToggle}
+              value={darkMode}
+            />
+          </View>
         </View>
 
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Dark Mode</Text>
-          <Switch
-            value={darkMode}
-            onValueChange={setDarkMode}
-            trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-            thumbColor={darkMode ? '#10B981' : '#9CA3AF'}
-          />
-        </View>
-      </View>
-
-      {/* Actions */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleExportData}>
-          <Text style={styles.actionButtonText}>📊 Export My Data</Text>
+        {/* Export Data Button */}
+        <TouchableOpacity style={styles.exportButton} onPress={handleExportData}>
+          <Text style={styles.exportIcon}>📊</Text>
+          <Text style={styles.exportText}>Export My Data</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => Alert.alert('Support', 'Email: support@aether.app')}
-        >
-          <Text style={styles.actionButtonText}>💬 Contact Support</Text>
+        {/* Sign Out Button */}
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => Alert.alert('Privacy Policy', 'Your data is secure and private.')}
-        >
-          <Text style={styles.actionButtonText}>🔒 Privacy Policy</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.button, styles.signOutButton]} 
-          onPress={handleSignOut}
-        >
-          <Text style={styles.signOutButtonText}>Sign Out</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+        {/* Bottom spacing */}
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#111827',
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
+  overlay: {
+    backgroundColor: 'rgba(17, 24, 39, 0.85)',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#065F46',
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    marginHorizontal: 15,
-    marginVertical: 10,
-    padding: 20,
-    elevation: 3,
-  },
-  userHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#111827',
   },
-  avatarText: {
-    fontSize: 24,
-    color: 'white',
-    fontWeight: 'bold',
+  loadingText: {
+    color: '#10B981',
+    fontSize: 18,
   },
-  userInfo: {
-    marginLeft: 15,
+  scrollContainer: {
     flex: 1,
   },
-  userName: {
-    fontSize: 20,
+  scrollContent: {
+    paddingTop: 60,
+  },
+
+  // Profile Header
+  profileHeader: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+  },
+  avatarContainer: {
+    marginBottom: 15,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  avatarText: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#FFFFFF',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 5,
   },
   userEmail: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginBottom: 15,
+  },
+  badgeContainer: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  badgeText: {
+    color: '#10B981',
     fontSize: 14,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  impactBadge: {
-    marginTop: 5,
-  },
-  impactLevel: {
-    fontSize: 12,
     fontWeight: '600',
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: 15,
-    marginVertical: 10,
+
+  // Stats Section
+  statsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 30,
   },
-  statItem: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 15,
+  statsRow: {
+    flexDirection: 'row',
+    marginBottom: 15,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 20,
     alignItems: 'center',
-    width: '48%',
-    marginBottom: 10,
-    marginHorizontal: '1%',
-    elevation: 2,
+    marginHorizontal: 7.5,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   statValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#10B981',
+    marginBottom: 5,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+
+  // Progress Section
+  section: {
+    paddingHorizontal: 20,
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 20,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  progressCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  progressEmoji: {
+    fontSize: 32,
+    marginBottom: 10,
+  },
+  progressValue: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#10B981',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 5,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#064E3B',
-    marginBottom: 15,
-  },
-  progressStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  progressItem: {
-    alignItems: 'center',
-  },
-  progressIcon: {
-    fontSize: 28,
     marginBottom: 5,
-  },
-  progressValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
   },
   progressLabel: {
     fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
-  settingRow: {
+
+  // Settings
+  settingItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  settingLabel: {
+  settingText: {
     fontSize: 16,
-    color: '#374151',
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
-  actions: {
-    marginHorizontal: 15,
-    marginTop: 10,
-    marginBottom: 30,
-  },
-  actionButton: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-    elevation: 2,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    color: '#374151',
-    textAlign: 'center',
-  },
-  button: {
-    borderRadius: 12,
+
+  // Export Button
+  exportButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+    borderRadius: 16,
     padding: 18,
     alignItems: 'center',
-    marginTop: 10,
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
   },
+  exportIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  exportText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
+  // Sign Out Button
   signOutButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
-  signOutButtonText: {
-    color: 'white',
-    fontSize: 18,
+  signOutText: {
+    fontSize: 16,
     fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+
+  bottomSpacing: {
+    height: 100,
   },
 });
