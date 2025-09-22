@@ -9,10 +9,11 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ImageBackground, // Import ImageBackground
+  ImageBackground,
 } from 'react-native';
 import { supabase } from '../../api/supabase';
-import ParticleContainer from '../../components/ParticleContainer'; // Import particles
+// Remove or comment out ParticleContainer since it's causing issues
+// import ParticleContainer from '../../components/ParticleContainer';
 
 // Define path for the background image
 const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
@@ -56,7 +57,8 @@ export default function RegisterScreen({ navigation }) {
         resizeMode="cover" 
         style={styles.backgroundImage}
       >
-        <ParticleContainer />
+        {/* Remove ParticleContainer temporarily to fix the error */}
+        {/* <ParticleContainer /> */}
         <View style={styles.overlay}>
           <Text style={styles.title}>Create Account</Text>
           
@@ -98,54 +100,54 @@ export default function RegisterScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    backgroundImage: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(17, 24, 39, 0.85)',
-        justifyContent: 'center',
-        padding: 20,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#f0fdf4',
-        textAlign: 'center',
-        marginBottom: 40,
-    },
-    form: {
-        width: '100%',
-    },
-    input: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 12,
-        padding: 16,
-        fontSize: 16,
-        color: 'white',
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
-    },
-    button: {
-        backgroundColor: '#4ade80',
-        borderRadius: 12,
-        padding: 18,
-        alignItems: 'center',
-        marginTop: 10,
-    },
-    buttonText: {
-        color: '#064e3b',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    linkText: {
-        color: '#4ade80',
-        textAlign: 'center',
-        marginTop: 20,
-    },
+  container: {
+    flex: 1,
+  },
+  backgroundImage: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.85)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#f0fdf4',
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  form: {
+    width: '100%',
+  },
+  input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: 'white',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  button: {
+    backgroundColor: '#4ade80',
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  buttonText: {
+    color: '#064e3b',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  linkText: {
+    color: '#4ade80',
+    textAlign: 'center',
+    marginTop: 20,
+  },
 });
