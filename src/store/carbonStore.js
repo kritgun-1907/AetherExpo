@@ -13,16 +13,22 @@ export const useCarbonStore = create((set, get) => ({
   
   // Actions
   addEmission: (amount, category) => {
-    set(state => ({
-      dailyEmissions: state.dailyEmissions + amount,
-      weeklyEmissions: state.weeklyEmissions + amount,
-      monthlyEmissions: state.monthlyEmissions + amount
-    }));
+    // We update state and handle the side-effect (saving) together
+    set(state => {
+      const newState = {
+        dailyEmissions: state.dailyEmissions + amount,
+        weeklyEmissions: state.weeklyEmissions + amount,
+        monthlyEmissions: state.monthlyEmissions + amount,
+      };
+      
+      // Save the full, updated state to AsyncStorage
+      const fullStateToSave = { ...get(), ...newState };
+      AsyncStorage.setItem('carbonData', JSON.stringify(fullStateToSave));
+      
+      return newState;
+    });
     
-    // Save to storage
-    get().saveToStorage();
-    
-    // Check for achievements
+    // Check for achievements after state has been updated
     get().checkAchievements();
   },
   
@@ -58,14 +64,12 @@ export const useCarbonStore = create((set, get) => ({
       });
     }
     
-    set(state => ({
-      achievements: [...state.achievements, ...newAchievements]
-    }));
-  },
-  
-  saveToStorage: async () => {
-    const state = get();
-    await AsyncStorage.setItem('carbonData', JSON.stringify(state));
+    if (newAchievements.length > 0) {
+      set(state => ({
+        // Avoid adding duplicate achievements
+        achievements: [...new Set([...state.achievements, ...newAchievements])]
+      }));
+    }
   },
   
   loadFromStorage: async () => {
