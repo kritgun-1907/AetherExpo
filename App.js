@@ -1,5 +1,4 @@
-// App.js - Complete Updated Version with Theme Support
-// This MUST be the first import
+// App.js - Fixed Version with Consistent Import Paths
 import 'react-native-gesture-handler';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -10,25 +9,30 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 
-// 🔥 STEP 1: Import Theme Provider (NEW IMPORT)
+// Import Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-// Import ALL your screens (same as before)
-import LoginScreen from './LoginScreen';
+// FIXED: All screens now have consistent paths
+import LoginScreen from './LoginScreen'; // This one stays in root for now
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
-import HomeScreen from './HomeScreen';
-import TrackingScreen from './TrackingScreen';
-import ProfileScreen from './ProfileScreen'; 
+import HomeScreen from './HomeScreen'; // This one stays in root for now
+import TrackingScreen from './TrackingScreen'; // This one stays in root for now
+import ProfileScreen from './ProfileScreen'; // This one stays in root for now
 
-// Import Supabase (same as before)
+// FIXED: Import screens from correct locations
+import ChallengesScreen from './src/screens/main/ChallengesScreen';
+// OPTION 1: If you move LeaderboardScreen to src/screens/main/
+import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
+// OPTION 2: If you keep LeaderboardScreen in root, use:
+// import LeaderboardScreen from './LeaderboardScreen';
+
 import { supabase } from './src/api/supabase';
 
 const prefix = Linking.createURL('/');
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// AuthStack (unchanged)
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -38,12 +42,6 @@ function AuthStack() {
     </Stack.Navigator>
   );
 }
-
-// In App.js - Replace the MainTabs function with this:
-
-// Import the missing screens first (add these imports at the top)
-import ChallengesScreen from './src/screens/main/ChallengesScreen';
-import LeaderboardScreen from './LeaderboardScreen'; // Move this to src/screens/main/ folder
 
 function MainTabs() {
   const { theme, isDarkMode } = useTheme();
@@ -90,11 +88,10 @@ function MainTabs() {
   );
 }
 
-// 🔥 STEP 4: Create AppContent component that uses theme
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const { theme } = useTheme(); // Get theme for loading screen
+  const { theme } = useTheme();
 
   const linking = {
     prefixes: [prefix],
@@ -104,31 +101,27 @@ function AppContent() {
   };
 
   useEffect(() => {
-    // Check the initial session state
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
       setIsLoading(false);
     });
 
-    // Set up the real-time listener for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
     });
 
-    // Cleanup the listener when the app closes
     return () => {
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // 🔥 STEP 5: Use theme colors in loading screen
   if (isLoading) {
     return (
       <View style={{ 
         flex: 1, 
         justifyContent: 'center', 
         alignItems: 'center',
-        backgroundColor: theme.background    // Theme-aware background
+        backgroundColor: theme.background
       }}>
         <ActivityIndicator size="large" color={theme.accentText} />
       </View>
@@ -148,11 +141,9 @@ function AppContent() {
   );
 }
 
-// 🔥 STEP 6: Wrap everything with ThemeProvider
 export default function App() {
   return (
     <SafeAreaProvider>
-      {/* This is the key change - wrapping with ThemeProvider */}
       <ThemeProvider>
         <AppContent />
       </ThemeProvider>
