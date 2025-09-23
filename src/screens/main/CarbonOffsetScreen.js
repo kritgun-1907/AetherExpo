@@ -1,4 +1,4 @@
-// src/screens/main/CarbonOffsetScreen.js
+// src/screens/main/CarbonOffsetScreen.js - COMPLETE VERSION
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   Alert,
   Image,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { plaidService, OFFSET_PROVIDERS } from '../../api/plaid';
 import { supabase } from '../../api/supabase';
@@ -21,6 +22,7 @@ export default function CarbonOffsetScreen() {
   const [selectedProvider, setSelectedProvider] = useState('goldstandard');
   const [userOffsets, setUserOffsets] = useState([]);
   const [totalOffset, setTotalOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadData();
@@ -28,26 +30,40 @@ export default function CarbonOffsetScreen() {
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       // Get user's carbon emissions for the last 30 days
-      const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
-      setUserEmissions(carbonData.totalCarbon);
+      try {
+        const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
+        setUserEmissions(carbonData.totalCarbon || 0);
+      } catch (error) {
+        console.log('Error loading emissions:', error);
+        setUserEmissions(0);
+      }
 
       // Get user's existing offsets
-      const { data: offsets } = await supabase
-        .from('carbon_offsets')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('purchased_at', { ascending: false });
+      try {
+        const { data: offsets } = await supabase
+          .from('carbon_offsets')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('purchased_at', { ascending: false });
 
-      setUserOffsets(offsets || []);
-      
-      const total = offsets?.reduce((sum, offset) => sum + offset.tons_co2, 0) || 0;
-      setTotalOffset(total);
+        setUserOffsets(offsets || []);
+        
+        const total = offsets?.reduce((sum, offset) => sum + parseFloat(offset.tons_co2), 0) || 0;
+        setTotalOffset(total);
+      } catch (error) {
+        console.log('Error loading offsets:', error);
+        setUserOffsets([]);
+        setTotalOffset(0);
+      }
     } catch (error) {
       console.error('Error loading offset data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -60,6 +76,11 @@ export default function CarbonOffsetScreen() {
       }
 
       const provider = OFFSET_PROVIDERS[selectedProvider];
+      if (!provider) {
+        Alert.alert('Error', 'Please select a valid provider');
+        return;
+      }
+
       const totalPrice = tons * provider.pricePerTon;
 
       Alert.alert(
@@ -70,16 +91,26 @@ export default function CarbonOffsetScreen() {
           {
             text: 'Purchase',
             onPress: async () => {
-              const { data: { user } } = await supabase.auth.getUser();
-              await plaidService.purchaseOffsets(user.id, selectedProvider, tons, totalPrice);
-              
-              Alert.alert(
-                'Purchase Successful!',
-                `You've successfully offset ${tons} tons of CO₂!\n\nYour certificate ID will be emailed to you.`
-              );
-              
-              loadData(); // Reload data
-              setOffsetAmount('1'); // Reset form
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) {
+                  Alert.alert('Error', 'Please log in to purchase offsets');
+                  return;
+                }
+
+                await plaidService.purchaseOffsets(user.id, selectedProvider, tons, totalPrice);
+                
+                Alert.alert(
+                  'Purchase Successful!',
+                  `You've successfully offset ${tons} tons of CO₂!\n\nYour certificate ID will be emailed to you.`
+                );
+                
+                loadData(); // Reload data
+                setOffsetAmount('1'); // Reset form
+              } catch (error) {
+                Alert.alert('Purchase Failed', 'Failed to purchase offsets. Please try again.');
+                console.error('Purchase error:', error);
+              }
             },
           },
         ]
@@ -151,16 +182,16 @@ export default function CarbonOffsetScreen() {
     }]}>
       <View style={styles.historyHeader}>
         <Text style={[styles.historyProvider, { color: theme.primaryText }]}>
-          {OFFSET_PROVIDERS[offset.provider]?.name}
+          {OFFSET_PROVIDERS[offset.provider]?.name || 'Unknown Provider'}
         </Text>
         <Text style={[styles.historyAmount, { color: theme.accentText }]}>
-          {offset.tons_co2} tons CO₂
+          {parseFloat(offset.tons_co2).toFixed(1)} tons CO₂
         </Text>
       </View>
       
       <View style={styles.historyDetails}>
         <Text style={[styles.historyPrice, { color: theme.secondaryText }]}>
-          ${offset.total_price} • {new Date(offset.purchased_at).toLocaleDateString()}
+          ${parseFloat(offset.total_price).toFixed(2)} • {new Date(offset.purchased_at).toLocaleDateString()}
         </Text>
         <Text style={[styles.certificateId, { color: theme.secondaryText }]}>
           Certificate: {offset.certificate_id}
@@ -172,7 +203,7 @@ export default function CarbonOffsetScreen() {
   const calculatePrice = () => {
     const tons = parseFloat(offsetAmount) || 0;
     const provider = OFFSET_PROVIDERS[selectedProvider];
-    return (tons * provider.pricePerTon).toFixed(2);
+    return provider ? (tons * provider.pricePerTon).toFixed(2) : '0.00';
   };
 
   const getNetEmissions = () => {
@@ -185,6 +216,15 @@ export default function CarbonOffsetScreen() {
       net: netEmissions,
     };
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.accentText} />
+        <Text style={[styles.loadingText, { color: theme.primaryText }]}>Loading...</Text>
+      </View>
+    );
+  }
 
   const emissions = getNetEmissions();
 
@@ -314,7 +354,7 @@ export default function CarbonOffsetScreen() {
               Provider:
             </Text>
             <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
-              {OFFSET_PROVIDERS[selectedProvider].name}
+              {OFFSET_PROVIDERS[selectedProvider]?.name || 'Unknown'}
             </Text>
           </View>
           
@@ -344,7 +384,7 @@ export default function CarbonOffsetScreen() {
               Your Offset History
             </Text>
             {userOffsets.map((offset, index) => (
-              <OffsetHistoryCard key={index} offset={offset} />
+              <OffsetHistoryCard key={offset.id || index} offset={offset} />
             ))}
           </View>
         )}
@@ -358,6 +398,15 @@ export default function CarbonOffsetScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
   },
   scrollContainer: {
     flex: 1,
@@ -456,6 +505,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   providerHeader: {
     flexDirection: 'row',
@@ -467,6 +521,7 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 8,
     marginRight: 15,
+    backgroundColor: '#F3F4F6',
   },
   providerInfo: {
     flex: 1,
@@ -515,6 +570,11 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -541,6 +601,11 @@ const styles = StyleSheet.create({
     padding: 15,
     alignItems: 'center',
     marginTop: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   purchaseButtonText: {
     fontSize: 16,
@@ -561,6 +626,11 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   historyHeader: {
     flexDirection: 'row',
