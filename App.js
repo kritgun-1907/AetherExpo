@@ -39,9 +39,13 @@ function AuthStack() {
   );
 }
 
-// 🔥 STEP 2: Update MainTabs to use theme colors
+// In App.js - Replace the MainTabs function with this:
+
+// Import the missing screens first (add these imports at the top)
+import ChallengesScreen from './src/screens/main/ChallengesScreen';
+import LeaderboardScreen from './LeaderboardScreen'; // Move this to src/screens/main/ folder
+
 function MainTabs() {
-  // Get theme data using the hook
   const { theme, isDarkMode } = useTheme();
   
   return (
@@ -54,18 +58,21 @@ function MainTabs() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Track') {
             iconName = focused ? 'add-circle' : 'add-circle-outline';
+          } else if (route.name === 'Leaderboard') {
+            iconName = focused ? 'trophy' : 'trophy-outline';
+          } else if (route.name === 'Challenges') {
+            iconName = focused ? 'target' : 'target-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        // 🔥 STEP 3: Use theme colors instead of hardcoded colors
-        tabBarActiveTintColor: theme.tabBarActive,      // Green in both modes
-        tabBarInactiveTintColor: theme.tabBarInactive,  // Gray -> Light gray
+        tabBarActiveTintColor: theme.tabBarActive,
+        tabBarInactiveTintColor: theme.tabBarInactive,
         tabBarStyle: {
-          backgroundColor: theme.tabBarBackground,      // White -> Dark gray
-          borderTopColor: theme.tabBarBorder,          // Light -> Dark border
+          backgroundColor: theme.tabBarBackground,
+          borderTopColor: theme.tabBarBorder,
           borderTopWidth: 1,
           paddingBottom: 5,
           paddingTop: 5,
@@ -76,6 +83,8 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Track" component={TrackingScreen} />
+      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Tab.Screen name="Challenges" component={ChallengesScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );

@@ -51,20 +51,97 @@ export default function ProfileScreen() {
     }
   };
 
-  const loadEmissionData = async () => {
-    try {
-      // Mock data that matches your screenshot
-      setDailyEmissions(0.0);
-      setWeeklyEmissions(0);
-      setMonthlyEmissions(0);
-      setAllTimeEmissions(0);
-      setStreak(0);
-      setTokens(0);
-      setAchievements(0);
-    } catch (error) {
-      console.error('Error loading emission data:', error);
+  // ProfileScreen.js - Replace the loadEmissionData function with this:
+
+const loadEmissionData = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // Get today's emissions
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data: todayData } = await supabase
+        .from('emissions')
+        .select('amount')
+        .eq('user_id', user.id)
+        .gte('created_at', today.toISOString());
+      
+      const todayTotal = todayData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
+      setDailyEmissions(todayTotal);
+      
+      // Get this week's emissions
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - 6);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const { data: weekData } = await supabase
+        .from('emissions')
+        .select('amount')
+        .eq('user_id', user.id)
+        .gte('created_at', weekStart.toISOString());
+      
+      const weekTotal = weekData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
+      setWeeklyEmissions(weekTotal);
+      
+      // Get this month's emissions
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      
+      const { data: monthData } = await supabase
+        .from('emissions')
+        .select('amount')
+        .eq('user_id', user.id)
+        .gte('created_at', monthStart.toISOString());
+      
+      const monthTotal = monthData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
+      setMonthlyEmissions(monthTotal);
+      
+      // Get all time emissions
+      const { data: allTimeData } = await supabase
+        .from('emissions')
+        .select('amount')
+        .eq('user_id', user.id);
+      
+      const allTimeTotal = allTimeData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
+      setAllTimeEmissions(allTimeTotal);
+      
+      // Calculate streak (consecutive days with emissions)
+      const { data: recentData } = await supabase
+        .from('emissions')
+        .select('created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      
+      let streakCount = 0;
+      const uniqueDays = [...new Set(recentData?.map(item => 
+        new Date(item.created_at).toDateString()) || [])];
+      
+      for (let i = 0; i < uniqueDays.length; i++) {
+        const checkDate = new Date();
+        checkDate.setDate(checkDate.getDate() - i);
+        
+        if (uniqueDays.includes(checkDate.toDateString())) {
+          streakCount++;
+        } else {
+          break;
+        }
+      }
+      setStreak(streakCount);
+      
+      // Set tokens and achievements (you can load these from database too)
+      setTokens(30); // Or calculate based on achievements
+      setAchievements(2); // Or count from achievements table
     }
-  };
+  } catch (error) {
+    console.error('Error loading emission data:', error);
+    // Fallback to local storage or Zustand store
+    const { dailyEmissions: localDaily } = useCarbonStore.getState();
+    setDailyEmissions(localDaily);
+  }
+};
 
   const handleSignOut = async () => {
     Alert.alert(
