@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build": "expo build",
+    "eject": "expo eject"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -39,6 +41,7 @@
   "devDependencies": {
     "@types/react": "~19.1.10",
     "babel-preset-expo": "^54.0.2",
+    "@babel/core": "^7.20.0",
     "typescript": "~5.9.2"
   }
 }

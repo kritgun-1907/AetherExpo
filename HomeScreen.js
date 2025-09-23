@@ -15,6 +15,23 @@ import {
 import { supabase, addEmission } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 
+// Import store with error handling
+let useCarbonStore;
+try {
+  const carbonStoreModule = require('./src/store/carbonStore');
+  useCarbonStore = carbonStoreModule.useCarbonStore;
+} catch (error) {
+  console.warn('CarbonStore not available:', error);
+  // Create a fallback store
+  useCarbonStore = () => ({
+    addEmission: () => {},
+    earnTokens: () => {},
+    dailyEmissions: 7.5,
+    tokens: 25,
+    achievements: [],
+  });
+}
+
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
 // Simple inline components to avoid import issues
@@ -105,15 +122,19 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
 };
 
 export default function HomeScreen() {
+  // ALL HOOKS MUST BE AT THE TOP LEVEL - CRITICAL FOR FIXING THE ERROR
   const { theme, isDarkMode } = useTheme();
   
+  // Try to use the store, with fallback values
+  const storeState = useCarbonStore ? useCarbonStore() : null;
+  
   // Local state instead of Zustand to avoid store issues
-  const [dailyEmissions, setDailyEmissions] = useState(7.5);
-  const [achievements, setAchievements] = useState([
+  const [dailyEmissions, setDailyEmissions] = useState(storeState?.dailyEmissions || 7.5);
+  const [achievements, setAchievements] = useState(storeState?.achievements || [
     { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
     { name: 'Week Warrior', emoji: '🔥', description: '7 day streak' },
   ]);
-  const [tokens, setTokens] = useState(25);
+  const [tokens, setTokens] = useState(storeState?.tokens || 25);
   const [streak, setStreak] = useState(5);
   
   const [userName, setUserName] = useState('User');
@@ -132,9 +153,11 @@ export default function HomeScreen() {
     { id: 'waste', name: 'Waste', emoji: '🗑️', factor: 0.1 },
   ];
 
+  // useEffect MUST be called unconditionally at the top level
   useEffect(() => {
     loadUserData();
     loadAchievements();
+    loadWeeklyChartData();
     console.log('HomeScreen loaded successfully');
   }, []);
 
@@ -160,6 +183,42 @@ export default function HomeScreen() {
     }
   };
 
+  const loadWeeklyChartData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Get last 7 days of data
+        const weekData = [];
+        const today = new Date();
+        
+        for (let i = 6; i >= 0; i--) {
+          const day = new Date();
+          day.setDate(today.getDate() - i);
+          day.setHours(0, 0, 0, 0);
+          
+          const nextDay = new Date(day);
+          nextDay.setDate(day.getDate() + 1);
+          
+          const { data: dayEmissions } = await supabase
+            .from('emissions')
+            .select('amount')
+            .eq('user_id', user.id)
+            .gte('created_at', day.toISOString())
+            .lt('created_at', nextDay.toISOString());
+          
+          const dayTotal = dayEmissions?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
+          weekData.push(dayTotal);
+        }
+        
+        setWeeklyData(weekData);
+      }
+    } catch (error) {
+      console.error('Error loading weekly data:', error);
+      // Keep fallback data
+      setWeeklyData([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
+    }
+  };
+
   const submitEmission = async () => {
     if (!selectedCategory || !emissionAmount) {
       Alert.alert('Error', 'Please select a category and enter an amount');
@@ -178,6 +237,10 @@ export default function HomeScreen() {
         await addEmission(user.id, selectedCategory, amount);
         setDailyEmissions(prev => prev + amount);
         setTokens(prev => prev + 5);
+        
+        // Reload weekly chart data
+        loadWeeklyChartData();
+        
         setEmissionAmount('');
         setSelectedCategory('');
         setModalVisible(false);
@@ -191,12 +254,12 @@ export default function HomeScreen() {
 
   const DAILY_GOAL = 50;
 
-const getProgressColor = () => {
-  const percentage = (dailyEmissions / DAILY_GOAL) * 100;
-  if (percentage < 60) return '#4ade80';      // Green if under 60%
-  if (percentage < 80) return '#facc15';      // Yellow if 60-80%
-  return '#f87171';                           // Red if over 80%
-};
+  const getProgressColor = () => {
+    const percentage = (dailyEmissions / DAILY_GOAL) * 100;
+    if (percentage < 60) return '#4ade80';
+    if (percentage < 80) return '#facc15';
+    return '#f87171';
+  };
 
   const renderCategoryItem = ({ item }) => (
     <TouchableOpacity
@@ -225,6 +288,7 @@ const getProgressColor = () => {
   // Create dynamic styles based on theme
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
+  // THIS IS THE MAIN RETURN STATEMENT - WHERE ALL YOUR JSX GOES
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
@@ -241,7 +305,7 @@ const getProgressColor = () => {
         </>
       )}
 
-      {/* Content */}
+      {/* Content ScrollView with all your existing components */}
       <ScrollView 
         style={styles.scrollContainer} 
         showsVerticalScrollIndicator={true}
@@ -309,34 +373,33 @@ const getProgressColor = () => {
         </View>
 
         {/* Progress Bar */}
-       <View style={[dynamicStyles.card]}>
-  <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
-    Daily Goal Progress
-  </Text>
-  <View style={styles.progressContainer}>
-    <View style={[styles.progressBar, { backgroundColor: theme.divider }]}>
-      <View 
-        style={[
-          styles.progressFill, 
-          { 
-            width: `${Math.min((dailyEmissions / DAILY_GOAL) * 100, 100)}%`,
-            backgroundColor: getProgressColor()
-          }
-        ]} 
-      />
-    </View>
-    <Text style={[styles.goalText, { color: theme.secondaryText }]}>
-      {dailyEmissions.toFixed(1)} / {DAILY_GOAL}kg CO₂e ({Math.round((dailyEmissions / DAILY_GOAL) * 100)}%)
-    </Text>
-    
-    {/* Add helpful context */}
-    <Text style={[styles.goalHint, { color: theme.secondaryText, fontSize: 12, marginTop: 5 }]}>
-      {dailyEmissions < DAILY_GOAL * 0.6 ? '🌟 Great job! Keep it green!' :
-       dailyEmissions < DAILY_GOAL * 0.8 ? '⚠️ Getting close to your limit' :
-       '🚨 Over your daily target'}
-    </Text>
-  </View>
-</View>
+        <View style={[dynamicStyles.card]}>
+          <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
+            Daily Goal Progress
+          </Text>
+          <View style={styles.progressContainer}>
+            <View style={[styles.progressBar, { backgroundColor: theme.divider }]}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    width: `${Math.min((dailyEmissions / DAILY_GOAL) * 100, 100)}%`,
+                    backgroundColor: getProgressColor()
+                  }
+                ]} 
+              />
+            </View>
+            <Text style={[styles.goalText, { color: theme.secondaryText }]}>
+              {dailyEmissions.toFixed(1)} / {DAILY_GOAL}kg CO₂e ({Math.round((dailyEmissions / DAILY_GOAL) * 100)}%)
+            </Text>
+            
+            <Text style={[styles.goalHint, { color: theme.secondaryText, fontSize: 12, marginTop: 5 }]}>
+              {dailyEmissions < DAILY_GOAL * 0.6 ? '🌟 Great job! Keep it green!' :
+               dailyEmissions < DAILY_GOAL * 0.8 ? '⚠️ Getting close to your limit' :
+               '🚨 Over your daily target'}
+            </Text>
+          </View>
+        </View>
 
         {/* Recent Achievements */}
         <View style={[dynamicStyles.card]}>
@@ -450,75 +513,6 @@ const getProgressColor = () => {
   );
 }
 
-const loadWeeklyChartData = async () => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      // Get last 7 days of data
-      const weekData = [];
-      const today = new Date();
-      
-      for (let i = 6; i >= 0; i--) {
-        const day = new Date();
-        day.setDate(today.getDate() - i);
-        day.setHours(0, 0, 0, 0);
-        
-        const nextDay = new Date(day);
-        nextDay.setDate(day.getDate() + 1);
-        
-        const { data: dayEmissions } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', user.id)
-          .gte('created_at', day.toISOString())
-          .lt('created_at', nextDay.toISOString());
-        
-        const dayTotal = dayEmissions?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-        weekData.push(dayTotal);
-      }
-      
-      setWeeklyData(weekData);
-    }
-  } catch (error) {
-    console.error('Error loading weekly data:', error);
-    // Keep fallback data
-    setWeeklyData([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
-  }
-};
-
-// Update the useEffect to call this function
-useEffect(() => {
-  loadUserData();
-  loadAchievements();
-  loadWeeklyChartData(); // Add this line
-  console.log('HomeScreen loaded successfully');
-}, []);
-
-// Also call it when emissions are added
-const submitEmission = async () => {
-  // ... existing code ...
-  
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await addEmission(user.id, selectedCategory, amount);
-      setDailyEmissions(prev => prev + amount);
-      setTokens(prev => prev + 5);
-      
-      // Reload weekly chart data
-      loadWeeklyChartData(); // Add this line
-      
-      setEmissionAmount('');
-      setSelectedCategory('');
-      setModalVisible(false);
-      Alert.alert('Success', 'Emission logged successfully!');
-    }
-  } catch (error) {
-    Alert.alert('Error', 'Failed to log emission. Please try again.');
-    console.error('Error submitting emission:', error);
-  }
-};
-
 // Function to create dynamic styles based on theme
 const createDynamicStyles = (theme, isDarkMode) => ({
   statCard: {
@@ -567,7 +561,7 @@ const createDynamicStyles = (theme, isDarkMode) => ({
   },
 });
 
-// --- STYLES ---
+// --- ALL YOUR EXISTING STYLES STAY THE SAME ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,

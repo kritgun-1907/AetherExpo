@@ -1,4 +1,3 @@
-// App.js - Fixed Version with Consistent Import Paths
 import 'react-native-gesture-handler';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -12,20 +11,15 @@ import * as Linking from 'expo-linking';
 // Import Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-// FIXED: All screens now have consistent paths
-import LoginScreen from './LoginScreen'; // This one stays in root for now
+// Import screens
+import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
-import HomeScreen from './HomeScreen'; // This one stays in root for now
-import TrackingScreen from './TrackingScreen'; // This one stays in root for now
-import ProfileScreen from './ProfileScreen'; // This one stays in root for now
-
-// FIXED: Import screens from correct locations
+import HomeScreen from './HomeScreen';
+import TrackingScreen from './TrackingScreen';
+import ProfileScreen from './ProfileScreen';
 import ChallengesScreen from './src/screens/main/ChallengesScreen';
-// OPTION 1: If you move LeaderboardScreen to src/screens/main/
 import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
-// OPTION 2: If you keep LeaderboardScreen in root, use:
-// import LeaderboardScreen from './LeaderboardScreen';
 
 import { supabase } from './src/api/supabase';
 
@@ -59,7 +53,12 @@ function MainTabs() {
           } else if (route.name === 'Leaderboard') {
             iconName = focused ? 'trophy' : 'trophy-outline';
           } else if (route.name === 'Challenges') {
-            iconName = focused ? 'target' : 'target-outline';
+            // FIXED: Changed from 'target' to valid Ionicon names
+            iconName = focused ? 'flag' : 'flag-outline';
+            // Alternative options:
+            // iconName = focused ? 'star' : 'star-outline';
+            // iconName = focused ? 'medal' : 'medal-outline';
+            // iconName = focused ? 'ribbon' : 'ribbon-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -101,16 +100,33 @@ function AppContent() {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session);
-      setIsLoading(false);
-    });
+    let mounted = true;
+    
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (mounted) {
+          setIsLoggedIn(!!session);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
+      if (mounted) {
+        setIsLoggedIn(!!session);
+      }
     });
 
     return () => {
+      mounted = false;
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -124,6 +140,7 @@ function AppContent() {
         backgroundColor: theme.background
       }}>
         <ActivityIndicator size="large" color={theme.accentText} />
+        <Text style={{ color: theme.primaryText, marginTop: 10 }}>Loading...</Text>
       </View>
     );
   }
