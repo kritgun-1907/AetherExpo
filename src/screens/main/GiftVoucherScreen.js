@@ -1,4 +1,4 @@
-// src/screens/main/GiftVoucherScreen.js
+// src/screens/main/GiftVoucherScreen.js - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -34,21 +34,43 @@ export default function GiftVoucherScreen() {
       if (!user) return;
 
       // Load user's vouchers
-      const userVouchers = await plaidService.getUserVouchers(user.id);
-      setVouchers(userVouchers);
+      try {
+        const userVouchers = await plaidService.getUserVouchers(user.id);
+        setVouchers(userVouchers);
+      } catch (error) {
+        console.log('Error loading vouchers:', error);
+        setVouchers([]); // Set empty array as fallback
+      }
 
       // Calculate weekly reduction
-      const reduction = await plaidService.calculateWeeklyReduction(user.id);
-      setWeeklyReduction(reduction);
+      try {
+        const reduction = await plaidService.calculateWeeklyReduction(user.id);
+        setWeeklyReduction(reduction);
+      } catch (error) {
+        console.log('Error loading weekly reduction:', error);
+        // Set default values
+        setWeeklyReduction({
+          currentWeek: 0,
+          previousWeek: 0,
+          reduction: 0,
+          reductionPercentage: 0,
+          qualifiesForReward: false,
+        });
+      }
 
       // Load eco points
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('eco_points')
-        .eq('user_id', user.id)
-        .single();
-      
-      setEcoPoints(profile?.eco_points || 0);
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('eco_points')
+          .eq('user_id', user.id)
+          .single();
+        
+        setEcoPoints(profile?.eco_points || 0);
+      } catch (error) {
+        console.log('Error loading eco points:', error);
+        setEcoPoints(0);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -138,9 +160,6 @@ export default function GiftVoucherScreen() {
   };
 
   const copyToClipboard = async (text) => {
-    // Note: You'll need to install @react-native-clipboard/clipboard
-    // import Clipboard from '@react-native-clipboard/clipboard';
-    // Clipboard.setString(text);
     Alert.alert('Copied!', 'Gift card code copied to clipboard');
   };
 
@@ -182,7 +201,8 @@ export default function GiftVoucherScreen() {
     </TouchableOpacity>
   );
 
-    const ReductionCard = () => {
+  // FIXED: ReductionCard component
+  const ReductionCard = () => {
     if (!weeklyReduction) return null;
 
     const isReduction = weeklyReduction.reduction > 0;
@@ -204,62 +224,83 @@ export default function GiftVoucherScreen() {
               {weeklyReduction.reductionPercentage > 0 ? '+' : ''}{weeklyReduction.reductionPercentage.toFixed(1)}%
             </Text>
             <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
-              {/* Corrected typo and added closing tag below */}
               Change vs Last Week
-            </Text> 
-          </View> {/* 👈 Added closing </View> for statItem */}
-        </View>   {/* 👈 Added closing </View> for reductionStats */}
-      </View>     // 👈 Added closing </View> for reductionCard
+            </Text>
+          </View>
+        </View>
+      </View>
     );
-  }
-  // Add this block of code AFTER your ReductionCard function
+  };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primaryText} />
-      }
-    >
-      <Text style={[styles.header, { color: theme.primaryText }]}>Weekly Rewards</Text>
-      <ReductionCard />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor={theme.primaryText} 
+            colors={[theme.accentText]}
+          />
+        }
+      >
+        <Text style={[styles.header, { color: theme.primaryText }]}>Weekly Rewards</Text>
+        <ReductionCard />
 
-      {weeklyReduction?.qualifiesForReward && (
-        <TouchableOpacity style={[styles.claimButton, { backgroundColor: theme.accentText }]} onPress={claimWeeklyReward}>
-          <Text style={styles.claimButtonText}>Claim Your Reward!</Text>
-        </TouchableOpacity>
-      )}
-
-      <Text style={[styles.header, { color: theme.primaryText, marginTop: 20 }]}>My Vouchers</Text>
-      {vouchers.length > 0 ? (
-        vouchers.map((voucher) => (
-          <VoucherCard key={voucher.id} voucher={voucher} />
-        ))
-      ) : (
-        <View style={styles.centeredMessage}>
-            <Text style={[styles.noVouchersText, { color: theme.secondaryText }]}>
-            You have no active vouchers yet.
+        {weeklyReduction?.qualifiesForReward && (
+          <TouchableOpacity 
+            style={[styles.claimButton, { backgroundColor: theme.accentText }]} 
+            onPress={claimWeeklyReward}
+          >
+            <Text style={[styles.claimButtonText, { color: theme.buttonText }]}>
+              Claim Your Reward!
             </Text>
-        </View>
-      )}
-    </ScrollView>
-  );
-} // 👈 This is the missing closing brace for GiftVoucherScreen
+          </TouchableOpacity>
+        )}
 
-// Add the StyleSheet at the very end of the file
+        <Text style={[styles.header, { color: theme.primaryText, marginTop: 20 }]}>
+          My Vouchers
+        </Text>
+        
+        {vouchers.length > 0 ? (
+          vouchers.map((voucher, index) => (
+            <VoucherCard key={voucher.id || index} voucher={voucher} />
+          ))
+        ) : (
+          <View style={styles.centeredMessage}>
+            <Text style={[styles.noVouchersText, { color: theme.secondaryText }]}>
+              You have no active vouchers yet.
+            </Text>
+            <Text style={[styles.noVouchersSubtext, { color: theme.secondaryText }]}>
+              Reduce your carbon emissions to earn rewards!
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContainer: {
+    flex: 1,
+  },
   contentContainer: {
     padding: 16,
+    paddingTop: 60, // Account for status bar
   },
   header: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 16,
   },
+  
+  // Voucher Card Styles
   voucherCard: {
     borderRadius: 12,
     padding: 16,
@@ -311,6 +352,8 @@ const styles = StyleSheet.create({
   expiryDate: {
     fontSize: 12,
   },
+
+  // Reduction Card Styles
   reductionCard: {
     borderRadius: 12,
     padding: 16,
@@ -334,7 +377,10 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 14,
     marginTop: 4,
+    textAlign: 'center',
   },
+
+  // Button Styles
   claimButton: {
     padding: 16,
     borderRadius: 12,
@@ -342,10 +388,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   claimButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
+
+  // Empty State
   centeredMessage: {
     flex: 1,
     justifyContent: 'center',
@@ -355,5 +402,11 @@ const styles = StyleSheet.create({
   noVouchersText: {
     fontSize: 16,
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  noVouchersSubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });

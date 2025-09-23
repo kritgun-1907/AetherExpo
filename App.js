@@ -1,4 +1,5 @@
-import 'react-native-gesture-handler';
+// App.js - Complete Updated Version with New Screen Navigation
+
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -8,25 +9,31 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 
-// Import Theme Provider
+// Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-// Import screens
+// Import ALL your screens
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
 import HomeScreen from './HomeScreen';
 import TrackingScreen from './TrackingScreen';
-import ProfileScreen from './ProfileScreen';
-import ChallengesScreen from './src/screens/main/ChallengesScreen';
+import ProfileScreen from './ProfileScreen'; 
 import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
+import ChallengesScreen from './src/screens/main/ChallengesScreen';
 
+// Import NEW screens
+import GiftVoucherScreen from './src/screens/main/GiftVoucherScreen';
+import CarbonOffsetScreen from './src/screens/main/CarbonOffsetScreen';
+
+// Import Supabase
 import { supabase } from './src/api/supabase';
 
 const prefix = Linking.createURL('/');
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// AuthStack (unchanged)
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -37,6 +44,7 @@ function AuthStack() {
   );
 }
 
+// Main Tab Navigator
 function MainTabs() {
   const { theme, isDarkMode } = useTheme();
   
@@ -53,12 +61,7 @@ function MainTabs() {
           } else if (route.name === 'Leaderboard') {
             iconName = focused ? 'trophy' : 'trophy-outline';
           } else if (route.name === 'Challenges') {
-            // FIXED: Changed from 'target' to valid Ionicon names
-            iconName = focused ? 'flag' : 'flag-outline';
-            // Alternative options:
-            // iconName = focused ? 'star' : 'star-outline';
-            // iconName = focused ? 'medal' : 'medal-outline';
-            // iconName = focused ? 'ribbon' : 'ribbon-outline';
+            iconName = focused ? 'ribbon' : 'ribbon-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -87,6 +90,37 @@ function MainTabs() {
   );
 }
 
+// Main Stack Navigator (NEW - includes additional screens)
+function MainStackNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {/* Main tabs as the default screen */}
+      <Stack.Screen name="MainTabs" component={MainTabs} />
+      
+      {/* Additional screens that can be navigated to */}
+      <Stack.Screen 
+        name="GiftVoucher" 
+        component={GiftVoucherScreen}
+        options={{
+          headerShown: true,
+          title: 'Gift Vouchers',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen 
+        name="CarbonOffset" 
+        component={CarbonOffsetScreen}
+        options={{
+          headerShown: true,
+          title: 'Carbon Offsets',
+          headerBackTitleVisible: false,
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// App Content Component
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,38 +129,47 @@ function AppContent() {
   const linking = {
     prefixes: [prefix],
     config: {
-      screens: {},
+      screens: {
+        Main: {
+          screens: {
+            MainTabs: {
+              screens: {
+                Home: 'home',
+                Track: 'track',
+                Leaderboard: 'leaderboard',
+                Challenges: 'challenges',
+                Profile: 'profile',
+              },
+            },
+            GiftVoucher: 'gift-voucher',
+            CarbonOffset: 'carbon-offset',
+          },
+        },
+        Auth: {
+          screens: {
+            Login: 'login',
+            Register: 'register',
+            ForgotPassword: 'forgot-password',
+          },
+        },
+      },
     },
   };
 
   useEffect(() => {
-    let mounted = true;
-    
-    const initializeAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted) {
-          setIsLoggedIn(!!session);
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) {
-        setIsLoggedIn(!!session);
-      }
+    // Check the initial session state
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(!!session);
+      setIsLoading(false);
     });
 
+    // Set up the real-time listener for auth changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    // Cleanup the listener when the app closes
     return () => {
-      mounted = false;
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -149,7 +192,7 @@ function AppContent() {
     <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isLoggedIn ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <Stack.Screen name="Main" component={MainStackNavigator} />
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} />
         )}
@@ -158,6 +201,7 @@ function AppContent() {
   );
 }
 
+// Main App Component
 export default function App() {
   return (
     <SafeAreaProvider>
