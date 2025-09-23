@@ -15,24 +15,80 @@ import {
 import { supabase, addEmission } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 
-// Import store with error handling
-let useCarbonStore;
+// Replace your existing carbon store import with this safer version:
+
+let useCarbonStore = null;
 try {
+  // Try to import the carbon store
   const carbonStoreModule = require('./src/store/carbonStore');
-  useCarbonStore = carbonStoreModule.useCarbonStore;
+  if (carbonStoreModule && carbonStoreModule.useCarbonStore) {
+    useCarbonStore = carbonStoreModule.useCarbonStore;
+  } else {
+    throw new Error('useCarbonStore not found in module');
+  }
 } catch (error) {
-  console.warn('CarbonStore not available:', error);
-  // Create a fallback store
+  console.warn('CarbonStore not available, using fallback:', error.message);
+  // Create a safe fallback function
   useCarbonStore = () => ({
-    addEmission: () => {},
-    earnTokens: () => {},
+    addEmission: () => console.log('Fallback addEmission called'),
+    earnTokens: () => console.log('Fallback earnTokens called'),
     dailyEmissions: 7.5,
     tokens: 25,
     achievements: [],
+    loadFromStorage: () => Promise.resolve(),
   });
 }
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
+
+// ✅ ADD THESE HELPER FUNCTIONS FOR REAL-TIME DATA
+const getUserProfile = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error loading user profile:', error);
+    return { data: null, error };
+  }
+};
+
+const subscribeToUserUpdates = (userId, callback) => {
+  return supabase
+    .channel(`profile_${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'user_profiles',
+        filter: `id=eq.${userId}`,
+      },
+      callback
+    )
+    .subscribe();
+};
+
+const subscribeToNotifications = (userId, callback) => {
+  return supabase
+    .channel(`notifications_${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`,
+      },
+      callback
+    )
+    .subscribe();
+};
 
 // Simple inline components to avoid import issues
 const StreakCounter = ({ streak = 0, theme, isDarkMode }) => (
@@ -128,6 +184,10 @@ export default function HomeScreen() {
   // Try to use the store, with fallback values
   const storeState = useCarbonStore ? useCarbonStore() : null;
   
+  // ✅ ADD THESE NEW STATE VARIABLES FOR REAL-TIME DATA
+  const [profile, setProfile] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  
   // Local state instead of Zustand to avoid store issues
   const [dailyEmissions, setDailyEmissions] = useState(storeState?.dailyEmissions || 7.5);
   const [achievements, setAchievements] = useState(storeState?.achievements || [
@@ -153,12 +213,94 @@ export default function HomeScreen() {
     { id: 'waste', name: 'Waste', emoji: '🗑️', factor: 0.1 },
   ];
 
-  // useEffect MUST be called unconditionally at the top level
+  // ✅ ENHANCED useEffect WITH REAL-TIME DATA AND SUBSCRIPTIONS
   useEffect(() => {
-    loadUserData();
-    loadAchievements();
-    loadWeeklyChartData();
-    console.log('HomeScreen loaded successfully');
+    let mounted = true;
+    let subscriptions = [];
+
+    const initializeData = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        
+        if (error || !user || !mounted) {
+          console.error('Auth error:', error);
+          return;
+        }
+
+        // ✅ LOAD USER PROFILE DATA
+        const { data: profileData } = await getUserProfile(user.id);
+        if (mounted && profileData) {
+          setProfile(profileData);
+          
+          // Update user name from profile
+          const name = profileData.full_name || user.email?.split('@')[0] || 'User';
+          setUserName(name);
+          
+          // Update stats from profile
+          if (profileData.eco_points) setTokens(profileData.eco_points);
+          if (profileData.streak_count) setStreak(profileData.streak_count);
+          
+          console.log('Profile data loaded:', profileData);
+        }
+
+        // ✅ SET UP REAL-TIME SUBSCRIPTIONS
+        const profileSubscription = subscribeToUserUpdates(user.id, (payload) => {
+          if (mounted) {
+            console.log('Profile updated:', payload);
+            if (payload.new) {
+              setProfile(payload.new);
+              // Update UI based on new profile data
+              if (payload.new.eco_points) setTokens(payload.new.eco_points);
+              if (payload.new.streak_count) setStreak(payload.new.streak_count);
+            }
+          }
+        });
+
+        const notificationSubscription = subscribeToNotifications(user.id, (payload) => {
+          if (mounted) {
+            console.log('New notification:', payload);
+            if (payload.new) {
+              setNotifications(prev => [payload.new, ...prev]);
+              // Show notification alert
+              Alert.alert(
+                payload.new.title,
+                payload.new.message,
+                [{ text: 'OK' }]
+              );
+            }
+          }
+        });
+
+        subscriptions.push(profileSubscription, notificationSubscription);
+
+        // Load other data
+        await loadAchievements();
+        await loadWeeklyChartData();
+        
+        console.log('HomeScreen loaded successfully with real-time subscriptions');
+        
+      } catch (error) {
+        console.error('Error initializing HomeScreen:', error);
+        if (mounted) {
+          // Fallback to basic data loading
+          loadUserData();
+          loadAchievements();
+          loadWeeklyChartData();
+        }
+      }
+    };
+
+    initializeData();
+
+    return () => {
+      mounted = false;
+      // ✅ CLEANUP SUBSCRIPTIONS
+      subscriptions.forEach(subscription => {
+        if (subscription && typeof subscription.unsubscribe === 'function') {
+          subscription.unsubscribe();
+        }
+      });
+    };
   }, []);
 
   const loadUserData = async () => {
@@ -305,6 +447,15 @@ export default function HomeScreen() {
         </>
       )}
 
+      {/* ✅ ADD NOTIFICATION INDICATOR IF THERE ARE UNREAD NOTIFICATIONS */}
+      {notifications.length > 0 && (
+        <View style={[styles.notificationBadge, { backgroundColor: theme.accentText }]}>
+          <Text style={[styles.notificationCount, { color: theme.buttonText }]}>
+            {notifications.length}
+          </Text>
+        </View>
+      )}
+
       {/* Content ScrollView with all your existing components */}
       <ScrollView 
         style={styles.scrollContainer} 
@@ -320,12 +471,13 @@ export default function HomeScreen() {
               Hello, {userName}! 👋
             </Text>
             <Text style={[styles.subGreeting, { color: theme.secondaryText }]}>
-              Let's track your carbon footprint
+              {profile?.is_premium ? '⭐ Premium Member' : 'Let\'s track your carbon footprint'}
             </Text>
           </View>
           <StreakCounter streak={streak} theme={theme} isDarkMode={isDarkMode} />
         </View>
 
+        {/* Rest of your existing JSX stays exactly the same */}
         {/* Stats Row */}
         <View style={styles.statsRow}>
           <View style={[dynamicStyles.statCard]}>
@@ -423,7 +575,7 @@ export default function HomeScreen() {
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
-      {/* Add Emission Modal */}
+      {/* Add Emission Modal - stays exactly the same */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -561,7 +713,7 @@ const createDynamicStyles = (theme, isDarkMode) => ({
   },
 });
 
-// --- ALL YOUR EXISTING STYLES STAY THE SAME ---
+// --- ALL YOUR EXISTING STYLES + NEW NOTIFICATION BADGE STYLES ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -572,6 +724,22 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 60,
   },
+  
+  // ✅ ADD NOTIFICATION BADGE STYLES
+  notificationBadge: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    zIndex: 1000,
+  },
+  notificationCount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
