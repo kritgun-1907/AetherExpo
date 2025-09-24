@@ -15,11 +15,9 @@ import {
 import { supabase, addEmission } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 
-// Replace your existing carbon store import with this safer version:
-
+// Import store with error handling
 let useCarbonStore = null;
 try {
-  // Try to import the carbon store
   const carbonStoreModule = require('./src/store/carbonStore');
   if (carbonStoreModule && carbonStoreModule.useCarbonStore) {
     useCarbonStore = carbonStoreModule.useCarbonStore;
@@ -28,7 +26,6 @@ try {
   }
 } catch (error) {
   console.warn('CarbonStore not available, using fallback:', error.message);
-  // Create a safe fallback function
   useCarbonStore = () => ({
     addEmission: () => console.log('Fallback addEmission called'),
     earnTokens: () => console.log('Fallback earnTokens called'),
@@ -41,7 +38,7 @@ try {
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
-// ✅ ADD THESE HELPER FUNCTIONS FOR REAL-TIME DATA
+// Helper functions for real-time data
 const getUserProfile = async (userId) => {
   try {
     const { data, error } = await supabase
@@ -90,7 +87,7 @@ const subscribeToNotifications = (userId, callback) => {
     .subscribe();
 };
 
-// Simple inline components to avoid import issues
+// Simple inline components
 const StreakCounter = ({ streak = 0, theme, isDarkMode }) => (
   <View style={[
     styles.streakContainer,
@@ -178,17 +175,18 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
 };
 
 export default function HomeScreen() {
-  // ALL HOOKS MUST BE AT THE TOP LEVEL - CRITICAL FOR FIXING THE ERROR
+  // Theme hook
   const { theme, isDarkMode } = useTheme();
   
-  // Try to use the store, with fallback values
+  // Store state
   const storeState = useCarbonStore ? useCarbonStore() : null;
   
-  // ✅ ADD THESE NEW STATE VARIABLES FOR REAL-TIME DATA
+  // Profile and notifications state
   const [profile, setProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
   
-  // Local state instead of Zustand to avoid store issues
+  // User data state
+  const [userName, setUserName] = useState('User');
   const [dailyEmissions, setDailyEmissions] = useState(storeState?.dailyEmissions || 7.5);
   const [achievements, setAchievements] = useState(storeState?.achievements || [
     { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
@@ -196,13 +194,13 @@ export default function HomeScreen() {
   ]);
   const [tokens, setTokens] = useState(storeState?.tokens || 25);
   const [streak, setStreak] = useState(5);
+  const [weeklyData, setWeeklyData] = useState([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
+  const [recentAchievements, setRecentAchievements] = useState([]);
   
-  const [userName, setUserName] = useState('User');
+  // Modal state
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [emissionAmount, setEmissionAmount] = useState('');
-  const [weeklyData, setWeeklyData] = useState([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
-  const [recentAchievements, setRecentAchievements] = useState([]);
 
   // Emission categories
   const categories = [
@@ -213,7 +211,7 @@ export default function HomeScreen() {
     { id: 'waste', name: 'Waste', emoji: '🗑️', factor: 0.1 },
   ];
 
-  // ✅ ENHANCED useEffect WITH REAL-TIME DATA AND SUBSCRIPTIONS
+  // Main useEffect with profile creation and subscriptions
   useEffect(() => {
     let mounted = true;
     let subscriptions = [];
@@ -227,29 +225,60 @@ export default function HomeScreen() {
           return;
         }
 
-        // ✅ LOAD USER PROFILE DATA
-        const { data: profileData } = await getUserProfile(user.id);
-        if (mounted && profileData) {
+        // Load user profile with creation if missing
+        const { data: profileData } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!profileData && mounted) {
+          // Create profile if it doesn't exist
+          console.log('No profile found, creating new profile for user:', user.id);
+          const email = user.email || 'user@example.com';
+          const { data: newProfile, error: createError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: user.id,
+              email: email,
+              full_name: email.split('@')[0],
+              eco_points: 0,
+              total_emissions: 0,
+              total_offsets: 0,
+              weekly_goal: 50,
+              streak_count: 0,
+              last_activity_date: new Date().toISOString().split('T')[0],
+              is_premium: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .select()
+            .single();
+
+          if (createError) {
+            console.error('Error creating profile:', createError);
+          } else if (newProfile && mounted) {
+            setProfile(newProfile);
+            setUserName(newProfile.full_name || 'User');
+            setTokens(newProfile.eco_points || 0);
+            setStreak(newProfile.streak_count || 0);
+            console.log('New profile created:', newProfile);
+          }
+        } else if (profileData && mounted) {
           setProfile(profileData);
-          
-          // Update user name from profile
           const name = profileData.full_name || user.email?.split('@')[0] || 'User';
           setUserName(name);
-          
-          // Update stats from profile
           if (profileData.eco_points) setTokens(profileData.eco_points);
           if (profileData.streak_count) setStreak(profileData.streak_count);
-          
           console.log('Profile data loaded:', profileData);
         }
 
-        // ✅ SET UP REAL-TIME SUBSCRIPTIONS
+        // Set up real-time subscriptions
         const profileSubscription = subscribeToUserUpdates(user.id, (payload) => {
           if (mounted) {
             console.log('Profile updated:', payload);
             if (payload.new) {
               setProfile(payload.new);
-              // Update UI based on new profile data
               if (payload.new.eco_points) setTokens(payload.new.eco_points);
               if (payload.new.streak_count) setStreak(payload.new.streak_count);
             }
@@ -261,7 +290,6 @@ export default function HomeScreen() {
             console.log('New notification:', payload);
             if (payload.new) {
               setNotifications(prev => [payload.new, ...prev]);
-              // Show notification alert
               Alert.alert(
                 payload.new.title,
                 payload.new.message,
@@ -282,7 +310,6 @@ export default function HomeScreen() {
       } catch (error) {
         console.error('Error initializing HomeScreen:', error);
         if (mounted) {
-          // Fallback to basic data loading
           loadUserData();
           loadAchievements();
           loadWeeklyChartData();
@@ -294,7 +321,6 @@ export default function HomeScreen() {
 
     return () => {
       mounted = false;
-      // ✅ CLEANUP SUBSCRIPTIONS
       subscriptions.forEach(subscription => {
         if (subscription && typeof subscription.unsubscribe === 'function') {
           subscription.unsubscribe();
@@ -329,7 +355,6 @@ export default function HomeScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Get last 7 days of data
         const weekData = [];
         const today = new Date();
         
@@ -356,7 +381,6 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Error loading weekly data:', error);
-      // Keep fallback data
       setWeeklyData([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
     }
   };
@@ -380,7 +404,6 @@ export default function HomeScreen() {
         setDailyEmissions(prev => prev + amount);
         setTokens(prev => prev + 5);
         
-        // Reload weekly chart data
         loadWeeklyChartData();
         
         setEmissionAmount('');
@@ -427,15 +450,12 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
-  // Create dynamic styles based on theme
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
-  // THIS IS THE MAIN RETURN STATEMENT - WHERE ALL YOUR JSX GOES
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
       
-      {/* Background Image - only show in dark mode */}
       {isDarkMode && (
         <>
           <ImageBackground 
@@ -447,7 +467,6 @@ export default function HomeScreen() {
         </>
       )}
 
-      {/* ✅ ADD NOTIFICATION INDICATOR IF THERE ARE UNREAD NOTIFICATIONS */}
       {notifications.length > 0 && (
         <View style={[styles.notificationBadge, { backgroundColor: theme.accentText }]}>
           <Text style={[styles.notificationCount, { color: theme.buttonText }]}>
@@ -456,7 +475,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Content ScrollView with all your existing components */}
       <ScrollView 
         style={styles.scrollContainer} 
         showsVerticalScrollIndicator={true}
@@ -464,7 +482,6 @@ export default function HomeScreen() {
         scrollIndicatorInsets={{ right: 1 }}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={[styles.greeting, { color: theme.primaryText }]}>
@@ -477,8 +494,6 @@ export default function HomeScreen() {
           <StreakCounter streak={streak} theme={theme} isDarkMode={isDarkMode} />
         </View>
 
-        {/* Rest of your existing JSX stays exactly the same */}
-        {/* Stats Row */}
         <View style={styles.statsRow}>
           <View style={[dynamicStyles.statCard]}>
             <Text style={[styles.statValue, { color: theme.accentText }]}>
@@ -506,7 +521,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Quick Add Button */}
         <TouchableOpacity 
           style={[dynamicStyles.quickAddButton]}
           onPress={() => setModalVisible(true)}
@@ -516,7 +530,6 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Emissions Chart */}
         <View style={[dynamicStyles.card]}>
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
             This Week's Emissions
@@ -524,7 +537,6 @@ export default function HomeScreen() {
           <EmissionChart data={weeklyData} theme={theme} isDarkMode={isDarkMode} />
         </View>
 
-        {/* Progress Bar */}
         <View style={[dynamicStyles.card]}>
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
             Daily Goal Progress
@@ -553,7 +565,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Recent Achievements */}
         <View style={[dynamicStyles.card]}>
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
             Your Achievements
@@ -571,11 +582,9 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Bottom spacing */}
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
-      {/* Add Emission Modal - stays exactly the same */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -594,7 +603,6 @@ export default function HomeScreen() {
               Log Emission
             </Text>
             
-            {/* Categories */}
             <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
               Select Category
             </Text>
@@ -606,7 +614,6 @@ export default function HomeScreen() {
               scrollEnabled={false}
             />
             
-            {/* Amount Input */}
             <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
               Amount (kg CO₂e)
             </Text>
@@ -626,7 +633,6 @@ export default function HomeScreen() {
               placeholderTextColor={theme.secondaryText}
             />
             
-            {/* Buttons */}
             <View style={styles.modalButtons}>
               <TouchableOpacity 
                 style={[
@@ -665,7 +671,6 @@ export default function HomeScreen() {
   );
 }
 
-// Function to create dynamic styles based on theme
 const createDynamicStyles = (theme, isDarkMode) => ({
   statCard: {
     backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground,
@@ -713,7 +718,6 @@ const createDynamicStyles = (theme, isDarkMode) => ({
   },
 });
 
-// --- ALL YOUR EXISTING STYLES + NEW NOTIFICATION BADGE STYLES ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -724,8 +728,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 60,
   },
-  
-  // ✅ ADD NOTIFICATION BADGE STYLES
   notificationBadge: {
     position: 'absolute',
     top: 60,
@@ -739,7 +741,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -758,8 +759,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 5,
   },
-  
-  // Streak Counter
   streakContainer: {
     borderRadius: 16,
     padding: 12,
@@ -779,7 +778,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.8,
   },
-
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -804,8 +802,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 15,
   },
-  
-  // Chart styles
   chartContainer: {
     borderRadius: 12,
     padding: 15,
