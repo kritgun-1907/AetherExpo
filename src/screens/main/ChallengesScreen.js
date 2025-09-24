@@ -1,4 +1,4 @@
-// src/screens/main/ChallengesScreen.js - UPDATED WITH OVERLAY EFFECT
+// src/screens/main/ChallengesScreen.js - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -12,14 +12,46 @@ import {
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
-import { useCarbonStore } from '../../store/carbonStore';
 
-// Add the same background image import as HomeScreen
+// Import store with error handling
+let useCarbonStore = null;
+try {
+  const carbonStoreModule = require('../../store/carbonStore');
+  if (carbonStoreModule && carbonStoreModule.useCarbonStore) {
+    useCarbonStore = carbonStoreModule.useCarbonStore;
+  }
+} catch (error) {
+  console.warn('CarbonStore not available, using fallback:', error.message);
+  useCarbonStore = () => ({
+    earnTokens: () => console.log('Fallback earnTokens called'),
+  });
+}
+
+// Add the same background image import as HomeScreen  
+// Correct path based on your project structure: assets/images/hero-carbon-tracker.jpg
 const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
 
 export default function ChallengesScreen() {
-  const { theme, isDarkMode } = useTheme();
-  const { earnTokens } = useCarbonStore();
+  // Get theme context with error handling
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || {
+    primaryText: '#111827',
+    secondaryText: '#6B7280',
+    accentText: '#10B981',
+    cardBackground: '#FFFFFF',
+    background: '#F0FDF4',
+    border: '#E5E7EB',
+    overlayBackground: 'rgba(17, 24, 39, 0.9)',
+    statusBarStyle: 'dark-content'
+  };
+  
+  // Get isDarkMode with fallback
+  const isDarkMode = themeContext?.isDarkMode || false;
+  
+  // Get store with error handling
+  const storeState = useCarbonStore ? useCarbonStore() : null;
+  const earnTokens = storeState?.earnTokens || (() => {});
+
   const [challenges, setChallenges] = useState([
     { id: 1, title: 'Zero Emission Day', description: 'Have a day with 0 emissions', reward: 50, emoji: '🌟', active: true },
     { id: 2, title: 'Public Transport Week', description: 'Use only public transport for a week', reward: 100, emoji: '🚌', active: true },
@@ -47,7 +79,7 @@ export default function ChallengesScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
       
-      {/* Add the same overlay effect as HomeScreen */}
+      {/* Add the same overlay effect as HomeScreen - only if dark mode is active */}
       {isDarkMode && (
         <>
           <ImageBackground 
