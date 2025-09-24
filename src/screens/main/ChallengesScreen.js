@@ -1,9 +1,8 @@
-// src/screens/main/ChallengesScreen.js - UPDATED WITH SOCIAL COMPONENTS
+// src/screens/main/ChallengesScreen.js - PROPERLY CONNECTED TO BACKEND
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
-  FlatList, 
   StyleSheet, 
   Alert, 
   ImageBackground, 
@@ -11,14 +10,41 @@ import {
   ScrollView,
   TouchableOpacity,
   Share,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
 
-// Import the social components
-import ChallengeCard from '../../components/social/ChallengeCard';
-import ShareButton from '../../components/social/ShareButton';
+// Import the social components (with fallback)
+let ChallengeCard, ShareButton;
+try {
+  ChallengeCard = require('../../components/social/ChallengeCard').default;
+  ShareButton = require('../../components/social/ShareButton').default;
+} catch (error) {
+  console.warn('Social components not available, using fallbacks');
+  // Fallback components
+  ChallengeCard = ({ challenge, isJoined, onJoin, onShare, onViewDetails }) => (
+    <View style={styles.fallbackCard}>
+      <Text style={styles.fallbackTitle}>{challenge.emoji} {challenge.title}</Text>
+      <Text style={styles.fallbackDesc}>{challenge.description}</Text>
+      <TouchableOpacity 
+        style={[styles.fallbackButton, { backgroundColor: isJoined ? '#6B7280' : '#10B981' }]}
+        onPress={isJoined ? onViewDetails : onJoin}
+      >
+        <Text style={styles.fallbackButtonText}>
+          {isJoined ? 'View Details' : 'Join Challenge'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+  ShareButton = ({ title, onShareComplete }) => (
+    <TouchableOpacity style={styles.fallbackButton} onPress={onShareComplete}>
+      <Text style={styles.fallbackButtonText}>{title}</Text>
+    </TouchableOpacity>
+  );
+}
 
 // Import store with error handling
 let useCarbonStore = null;
@@ -29,9 +55,6 @@ try {
   }
 } catch (error) {
   console.warn('CarbonStore not available, using fallback:', error.message);
-  useCarbonStore = () => ({
-    earnTokens: () => console.log('Fallback earnTokens called'),
-  });
 }
 
 const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
@@ -52,78 +75,45 @@ export default function ChallengesScreen() {
   const isDarkMode = themeContext?.isDarkMode || false;
   
   const storeState = useCarbonStore ? useCarbonStore() : null;
-  const earnTokens = storeState?.earnTokens || (() => {});
-// Update your challenges array to use proper UUIDs
-const [challenges, setChallenges] = useState([
-  { 
-    id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', // Use proper UUID format
-    title: 'Zero Emission Day',
-    description: 'Complete a full day with absolutely zero carbon emissions. Track all your activities and keep them carbon neutral!',
-    emoji: '🌟',
-    challengeType: 'individual',
-    targetValue: 0,
-    targetUnit: 'kg CO₂',
-    currentProgress: 0,
-    startDate: new Date().toISOString(),
-    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    rewardTokens: 50,
-    participantCount: 234,
-    isActive: true
-  },
-  { 
-    id: 'b2c3d4e5-f6g7-8901-bcde-f23456789012', // Use proper UUID format
-    title: 'Public Transport Week',
-    description: 'Use only public transportation, walking, or cycling for all your travels this week. No personal vehicles!',
-    emoji: '🚌',
-    challengeType: 'group',
-    targetValue: 7,
-    targetUnit: 'days',
-    currentProgress: 3,
-    startDate: new Date().toISOString(),
-    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    rewardTokens: 100,
-    participantCount: 567,
-    isActive: true
-  },
-  { 
-    id: 'c3d4e5f6-g7h8-9012-cdef-345678901234', // Use proper UUID format
-    title: 'Vegan Challenge',
-    description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
-    emoji: '🌱',
-    challengeType: 'global',
-    targetValue: 3,
-    targetUnit: 'days',
-    currentProgress: 1,
-    startDate: new Date().toISOString(),
-    endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-    rewardTokens: 75,
-    participantCount: 892,
-    isActive: true
-  },
-  { 
-    id: 'd4e5f6g7-h8i9-0123-defg-456789012345', // Use proper UUID format
-    title: 'Energy Saver',
-    description: 'Reduce your home energy consumption by 30% this week compared to your average.',
-    emoji: '⚡',
-    challengeType: 'individual',
-    targetValue: 30,
-    targetUnit: '% reduction',
-    currentProgress: 12,
-    startDate: new Date().toISOString(),
-    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    rewardTokens: 60,
-    participantCount: 445,
-    isActive: true
-  },
-]);
+  const earnTokens = storeState?.earnTokens || (() => console.log('Earning tokens...'));
 
+  // State management
+  const [challenges, setChallenges] = useState([]);
   const [joinedChallenges, setJoinedChallenges] = useState([]);
-  const [activeTab, setActiveTab] = useState('all'); // 'all', 'joined', 'completed'
+  const [activeTab, setActiveTab] = useState('all');
   const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-   checkUser();
+    initializeScreen();
   }, []);
+
+  const initializeScreen = async () => {
+    setLoading(true);
+    try {
+      await checkUser();
+      await loadChallengesFromBackend();
+    } catch (error) {
+      console.error('Error initializing screen:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadChallengesFromBackend();
+      if (currentUser) {
+        await loadUserChallenges(currentUser.id);
+      }
+    } catch (error) {
+      console.error('Error refreshing:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const checkUser = async () => {
     try {
@@ -136,9 +126,7 @@ const [challenges, setChallenges] = useState([
       setCurrentUser(user);
       
       if (user) {
-        // Ensure user profile exists
         await ensureUserProfile(user);
-        // Load user challenges
         await loadUserChallenges(user.id);
       }
     } catch (error) {
@@ -148,36 +136,147 @@ const [challenges, setChallenges] = useState([
 
   const ensureUserProfile = async (user) => {
     try {
+      // First check if profile exists
       const { data: profile, error: fetchError } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('id')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (fetchError && fetchError.code === 'PGRST116') {
-        // Profile doesn't exist, create it
-        const { error: insertError } = await supabase
+      if (fetchError) {
+        console.error('Error fetching user profile:', fetchError);
+        return;
+      }
+
+      // If profile doesn't exist, create it
+      if (!profile) {
+        console.log('Creating user profile...');
+        const { data: newProfile, error: insertError } = await supabase
           .from('user_profiles')
           .insert({
             id: user.id,
             email: user.email,
-            full_name: user.user_metadata?.full_name || user.email,
-          });
+            full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+            eco_points: 0,
+            total_emissions: 0,
+            streak_count: 0,
+            is_premium: false
+          })
+          .select()
+          .single();
 
         if (insertError) {
           console.error('Error creating user profile:', insertError);
+          // Try alternative approach - user might already exist in auth.users
+          console.log('Profile creation failed, user might already be set up');
         } else {
-          console.log('User profile created successfully');
+          console.log('User profile created successfully:', newProfile);
         }
-      } else if (fetchError) {
-        console.error('Error fetching user profile:', fetchError);
       }
     } catch (error) {
       console.error('Error ensuring user profile:', error);
     }
   };
 
+  const loadChallengesFromBackend = async () => {
+    try {
+      // Try to load from backend first
+      const { data: backendChallenges, error } = await supabase
+        .from('challenges')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.log('Backend challenges not available, using fallback data:', error.message);
+        // Use fallback data if backend is not set up yet
+        setChallenges(getFallbackChallenges());
+      } else if (backendChallenges && backendChallenges.length > 0) {
+        console.log('Loaded challenges from backend:', backendChallenges.length);
+        setChallenges(backendChallenges);
+      } else {
+        console.log('No challenges in backend, using fallback data');
+        // Insert fallback challenges into backend
+        await insertFallbackChallenges();
+        setChallenges(getFallbackChallenges());
+      }
+    } catch (error) {
+      console.error('Error loading challenges:', error);
+      setChallenges(getFallbackChallenges());
+    }
+  };
+
+  const getFallbackChallenges = () => [
+    { 
+      id: 'zero-emission-day',
+      title: 'Zero Emission Day',
+      description: 'Complete a full day with absolutely zero carbon emissions. Track all your activities and keep them carbon neutral!',
+      emoji: '🌟',
+      challenge_type: 'individual',
+      target_value: 0,
+      target_unit: 'kg CO₂',
+      reward_tokens: 50,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+    { 
+      id: 'public-transport-week',
+      title: 'Public Transport Week',
+      description: 'Use only public transportation, walking, or cycling for all your travels this week. No personal vehicles!',
+      emoji: '🚌',
+      challenge_type: 'group',
+      target_value: 7,
+      target_unit: 'days',
+      reward_tokens: 100,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+    { 
+      id: 'vegan-challenge',
+      title: 'Vegan Challenge',
+      description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
+      emoji: '🌱',
+      challenge_type: 'global',
+      target_value: 3,
+      target_unit: 'days',
+      reward_tokens: 75,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+    { 
+      id: 'energy-saver',
+      title: 'Energy Saver',
+      description: 'Reduce your home energy consumption by 30% this week compared to your average.',
+      emoji: '⚡',
+      challenge_type: 'individual',
+      target_value: 30,
+      target_unit: '% reduction',
+      reward_tokens: 60,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  const insertFallbackChallenges = async () => {
+    try {
+      const fallbackChallenges = getFallbackChallenges();
+      const { error } = await supabase
+        .from('challenges')
+        .upsert(fallbackChallenges, { onConflict: 'id' });
+
+      if (error) {
+        console.error('Error inserting fallback challenges:', error);
+      } else {
+        console.log('Fallback challenges inserted successfully');
+      }
+    } catch (error) {
+      console.error('Error in insertFallbackChallenges:', error);
+    }
+  };
+
   const loadUserChallenges = async (userId) => {
+    if (!userId) return;
+
     try {
       const { data: userChallenges, error } = await supabase
         .from('user_challenges')
@@ -199,10 +298,11 @@ const [challenges, setChallenges] = useState([
           if (userChallenge) {
             return {
               ...challenge,
-              currentProgress: userChallenge.current_progress,
+              currentProgress: userChallenge.current_progress || 0,
+              userStatus: userChallenge.status
             };
           }
-          return challenge;
+          return { ...challenge, currentProgress: 0 };
         }));
       }
     } catch (error) {
@@ -225,29 +325,37 @@ const [challenges, setChallenges] = useState([
           text: 'Join', 
           onPress: async () => {
             try {
-              // Add to database with better error handling
               const { error } = await supabase
                 .from('user_challenges')
                 .insert({
                   user_id: currentUser.id,
-                  challenge_id: challenge.id, // Using string ID now
+                  challenge_id: challenge.id,
                   status: 'active',
                   current_progress: 0,
                 });
 
               if (error) {
                 console.error('Error joining challenge:', error);
-                Alert.alert('Error', `Failed to join challenge: ${error.message}`);
+                
+                // Check if it's a foreign key error
+                if (error.message.includes('foreign key') || error.code === '23503') {
+                  Alert.alert(
+                    'Setup Required', 
+                    'Your account needs to be set up. Please try refreshing the app or contact support.'
+                  );
+                } else {
+                  Alert.alert('Error', `Failed to join challenge: ${error.message}`);
+                }
                 return;
               }
 
               // Update local state
-              setJoinedChallenges([...joinedChallenges, challenge.id]);
+              setJoinedChallenges(prev => [...prev, challenge.id]);
               earnTokens(5);
               Alert.alert('Success', `You joined the ${challenge.title} challenge!`);
             } catch (error) {
               console.error('Error joining challenge:', error);
-              Alert.alert('Error', 'Failed to join challenge');
+              Alert.alert('Error', 'Failed to join challenge. Please try again.');
             }
           }
         }
@@ -272,9 +380,12 @@ const [challenges, setChallenges] = useState([
   };
 
   const handleViewDetails = (challenge) => {
+    const rewardTokens = challenge.reward_tokens || challenge.rewardTokens || 0;
+    const participantCount = challenge.participant_count || challenge.participantCount || 0;
+    
     Alert.alert(
       challenge.title,
-      `${challenge.description}\n\nReward: ${challenge.rewardTokens} tokens\nParticipants: ${challenge.participantCount}`,
+      `${challenge.description}\n\nReward: ${rewardTokens} tokens\nParticipants: ${participantCount}`,
       [{ text: 'OK' }]
     );
   };
@@ -284,14 +395,27 @@ const [challenges, setChallenges] = useState([
       case 'joined':
         return challenges.filter(c => joinedChallenges.includes(c.id));
       case 'completed':
-        return challenges.filter(c => 
-          joinedChallenges.includes(c.id) && 
-          c.currentProgress >= c.targetValue
-        );
+        return challenges.filter(c => {
+          const isJoined = joinedChallenges.includes(c.id);
+          const targetValue = c.target_value || c.targetValue || 0;
+          const currentProgress = c.currentProgress || 0;
+          return isJoined && currentProgress >= targetValue;
+        });
       default:
         return challenges;
     }
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: theme.background }]}>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
+        <ActivityIndicator size="large" color={theme.accentText} />
+        <Text style={[styles.loadingText, { color: theme.secondaryText }]}>Loading challenges...</Text>
+      </View>
+    );
+  }
 
   // Show login required message if user is not authenticated
   if (!currentUser) {
@@ -331,6 +455,13 @@ const [challenges, setChallenges] = useState([
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor={theme.accentText}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -390,13 +521,18 @@ const [challenges, setChallenges] = useState([
           </View>
           <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
             <Text style={[styles.statValue, { color: theme.accentText }]}>
-              {challenges.filter(c => joinedChallenges.includes(c.id) && c.currentProgress >= c.targetValue).length}
+              {filteredChallenges().filter(c => c.userStatus === 'completed').length}
             </Text>
             <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Completed</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
             <Text style={[styles.statValue, { color: theme.accentText }]}>
-              {challenges.reduce((sum, c) => joinedChallenges.includes(c.id) ? sum + c.rewardTokens : sum, 0)}
+              {challenges.reduce((sum, c) => {
+                if (joinedChallenges.includes(c.id)) {
+                  return sum + (c.reward_tokens || c.rewardTokens || 0);
+                }
+                return sum;
+              }, 0)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Potential Tokens</Text>
           </View>
@@ -407,7 +543,16 @@ const [challenges, setChallenges] = useState([
           {filteredChallenges().map((challenge) => (
             <ChallengeCard
               key={challenge.id}
-              challenge={challenge}
+              challenge={{
+                ...challenge,
+                // Normalize field names for compatibility
+                challengeType: challenge.challenge_type || challenge.challengeType,
+                targetValue: challenge.target_value || challenge.targetValue,
+                targetUnit: challenge.target_unit || challenge.targetUnit,
+                rewardTokens: challenge.reward_tokens || challenge.rewardTokens,
+                participantCount: challenge.participant_count || challenge.participantCount || 0,
+                isActive: challenge.is_active !== false,
+              }}
               isJoined={joinedChallenges.includes(challenge.id)}
               onJoin={() => handleJoinChallenge(challenge)}
               onShare={() => handleShareChallenge(challenge)}
@@ -436,6 +581,10 @@ const [challenges, setChallenges] = useState([
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContainer: {
     flex: 1,
@@ -509,5 +658,60 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 20,
     textAlign: 'center',
+  },
+  loginRequired: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  loginText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  loginSubtext: {
+    fontSize: 16,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+  },
+  // Fallback component styles
+  fallbackCard: {
+    backgroundColor: '#FFFFFF',
+    margin: 10,
+    padding: 15,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  fallbackTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  fallbackDesc: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  fallbackButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  fallbackButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
