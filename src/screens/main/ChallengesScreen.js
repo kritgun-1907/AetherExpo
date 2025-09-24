@@ -53,69 +53,69 @@ export default function ChallengesScreen() {
   
   const storeState = useCarbonStore ? useCarbonStore() : null;
   const earnTokens = storeState?.earnTokens || (() => {});
-
-  const [challenges, setChallenges] = useState([
-    { 
-      id: '1',
-      title: 'Zero Emission Day',
-      description: 'Complete a full day with absolutely zero carbon emissions. Track all your activities and keep them carbon neutral!',
-      emoji: '🌟',
-      challengeType: 'individual',
-      targetValue: 0,
-      targetUnit: 'kg CO₂',
-      currentProgress: 0,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      rewardTokens: 50,
-      participantCount: 234,
-      isActive: true
-    },
-    { 
-      id: '2',
-      title: 'Public Transport Week',
-      description: 'Use only public transportation, walking, or cycling for all your travels this week. No personal vehicles!',
-      emoji: '🚌',
-      challengeType: 'group',
-      targetValue: 7,
-      targetUnit: 'days',
-      currentProgress: 3,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      rewardTokens: 100,
-      participantCount: 567,
-      isActive: true
-    },
-    { 
-      id: '3',
-      title: 'Vegan Challenge',
-      description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
-      emoji: '🌱',
-      challengeType: 'global',
-      targetValue: 3,
-      targetUnit: 'days',
-      currentProgress: 1,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      rewardTokens: 75,
-      participantCount: 892,
-      isActive: true
-    },
-    { 
-      id: '4',
-      title: 'Energy Saver',
-      description: 'Reduce your home energy consumption by 30% this week compared to your average.',
-      emoji: '⚡',
-      challengeType: 'individual',
-      targetValue: 30,
-      targetUnit: '% reduction',
-      currentProgress: 12,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      rewardTokens: 60,
-      participantCount: 445,
-      isActive: true
-    },
-  ]);
+// Update your challenges array to use proper UUIDs
+const [challenges, setChallenges] = useState([
+  { 
+    id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', // Use proper UUID format
+    title: 'Zero Emission Day',
+    description: 'Complete a full day with absolutely zero carbon emissions. Track all your activities and keep them carbon neutral!',
+    emoji: '🌟',
+    challengeType: 'individual',
+    targetValue: 0,
+    targetUnit: 'kg CO₂',
+    currentProgress: 0,
+    startDate: new Date().toISOString(),
+    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    rewardTokens: 50,
+    participantCount: 234,
+    isActive: true
+  },
+  { 
+    id: 'b2c3d4e5-f6g7-8901-bcde-f23456789012', // Use proper UUID format
+    title: 'Public Transport Week',
+    description: 'Use only public transportation, walking, or cycling for all your travels this week. No personal vehicles!',
+    emoji: '🚌',
+    challengeType: 'group',
+    targetValue: 7,
+    targetUnit: 'days',
+    currentProgress: 3,
+    startDate: new Date().toISOString(),
+    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    rewardTokens: 100,
+    participantCount: 567,
+    isActive: true
+  },
+  { 
+    id: 'c3d4e5f6-g7h8-9012-cdef-345678901234', // Use proper UUID format
+    title: 'Vegan Challenge',
+    description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
+    emoji: '🌱',
+    challengeType: 'global',
+    targetValue: 3,
+    targetUnit: 'days',
+    currentProgress: 1,
+    startDate: new Date().toISOString(),
+    endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    rewardTokens: 75,
+    participantCount: 892,
+    isActive: true
+  },
+  { 
+    id: 'd4e5f6g7-h8i9-0123-defg-456789012345', // Use proper UUID format
+    title: 'Energy Saver',
+    description: 'Reduce your home energy consumption by 30% this week compared to your average.',
+    emoji: '⚡',
+    challengeType: 'individual',
+    targetValue: 30,
+    targetUnit: '% reduction',
+    currentProgress: 12,
+    startDate: new Date().toISOString(),
+    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    rewardTokens: 60,
+    participantCount: 445,
+    isActive: true
+  },
+]);
 
   const [joinedChallenges, setJoinedChallenges] = useState([]);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'joined', 'completed'
