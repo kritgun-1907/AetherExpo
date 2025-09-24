@@ -119,20 +119,75 @@ const [challenges, setChallenges] = useState([
 
   const [joinedChallenges, setJoinedChallenges] = useState([]);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'joined', 'completed'
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    loadUserChallenges();
+   checkUser();
   }, []);
 
-  const loadUserChallenges = async () => {
+  const checkUser = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error('Error getting user:', error);
+        return;
+      }
+      
+      setCurrentUser(user);
+      
+      if (user) {
+        // Ensure user profile exists
+        await ensureUserProfile(user);
+        // Load user challenges
+        await loadUserChallenges(user.id);
+      }
+    } catch (error) {
+      console.error('Error in checkUser:', error);
+    }
+  };
 
-      const { data: userChallenges } = await supabase
+  const ensureUserProfile = async (user) => {
+    try {
+      const { data: profile, error: fetchError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (fetchError && fetchError.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const { error: insertError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || user.email,
+          });
+
+        if (insertError) {
+          console.error('Error creating user profile:', insertError);
+        } else {
+          console.log('User profile created successfully');
+        }
+      } else if (fetchError) {
+        console.error('Error fetching user profile:', fetchError);
+      }
+    } catch (error) {
+      console.error('Error ensuring user profile:', error);
+    }
+  };
+
+  const loadUserChallenges = async (userId) => {
+    try {
+      const { data: userChallenges, error } = await supabase
         .from('user_challenges')
         .select('challenge_id, status, current_progress')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error loading user challenges:', error);
+        return;
+      }
 
       if (userChallenges) {
         const joinedIds = userChallenges.map(uc => uc.challenge_id);
@@ -156,6 +211,11 @@ const [challenges, setChallenges] = useState([
   };
 
   const handleJoinChallenge = async (challenge) => {
+    if (!currentUser) {
+      Alert.alert('Error', 'Please log in to join challenges');
+      return;
+    }
+
     Alert.alert(
       'Join Challenge',
       `Join "${challenge.title}"?`,
@@ -165,24 +225,20 @@ const [challenges, setChallenges] = useState([
           text: 'Join', 
           onPress: async () => {
             try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (!user) {
-                Alert.alert('Error', 'Please log in to join challenges');
-                return;
-              }
-
-              // Add to database
+              // Add to database with better error handling
               const { error } = await supabase
                 .from('user_challenges')
                 .insert({
-                  user_id: user.id,
-                  challenge_id: challenge.id,
+                  user_id: currentUser.id,
+                  challenge_id: challenge.id, // Using string ID now
                   status: 'active',
                   current_progress: 0,
                 });
 
               if (error) {
                 console.error('Error joining challenge:', error);
+                Alert.alert('Error', `Failed to join challenge: ${error.message}`);
+                return;
               }
 
               // Update local state
@@ -236,6 +292,25 @@ const [challenges, setChallenges] = useState([
         return challenges;
     }
   };
+
+  // Show login required message if user is not authenticated
+  if (!currentUser) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
+        
+        <View style={styles.loginRequired}>
+          <Ionicons name="lock-closed-outline" size={64} color={theme.secondaryText} />
+          <Text style={[styles.loginText, { color: theme.primaryText }]}>
+            Please log in to view challenges
+          </Text>
+          <Text style={[styles.loginSubtext, { color: theme.secondaryText }]}>
+            Sign up or log in to join challenges and track your progress
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
