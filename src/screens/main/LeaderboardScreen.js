@@ -1,4 +1,4 @@
-// src/screens/main/LeaderboardScreen.js - FULLY BACKEND CONNECTED
+// src/screens/main/LeaderboardScreen.js - REAL-TIME UPDATES FIXED
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -44,6 +44,38 @@ export default function LeaderboardScreen() {
     initializeLeaderboard();
   }, [timeRange]);
 
+  // Set up real-time subscription for emissions changes
+  useEffect(() => {
+    const emissionsSubscription = supabase
+      .channel('emissions_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'emissions' },
+        (payload) => {
+          console.log('Emissions changed:', payload);
+          // Refresh leaderboard when emissions change
+          loadLeaderboardData();
+        }
+      )
+      .subscribe();
+
+    const profilesSubscription = supabase
+      .channel('profiles_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'user_profiles' },
+        (payload) => {
+          console.log('Profile changed:', payload);
+          // Refresh leaderboard when profiles change
+          loadLeaderboardData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(emissionsSubscription);
+      supabase.removeChannel(profilesSubscription);
+    };
+  }, [timeRange]);
+
   const initializeLeaderboard = async () => {
     setLoading(true);
     try {
@@ -51,7 +83,6 @@ export default function LeaderboardScreen() {
       await loadLeaderboardData();
     } catch (error) {
       console.error('Error initializing leaderboard:', error);
-      // Use fallback data if backend fails
       setUsers(getFallbackLeaderboardData());
     } finally {
       setLoading(false);
@@ -68,156 +99,152 @@ export default function LeaderboardScreen() {
     }
   };
 
+  const getDateRange = () => {
+    const now = new Date();
+    let startDate;
+    
+    switch (timeRange) {
+      case 'weekly':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'monthly':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date('2020-01-01'); // All time
+    }
+    
+    return startDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+  };
+
   const loadLeaderboardData = async () => {
     try {
-      // First, ensure we have some users with emissions data
-      await ensureSampleData();
-
-      // Calculate date range based on timeRange
-      let dateFilter = '';
-      const now = new Date();
+      console.log(`Loading leaderboard data for ${timeRange} range...`);
       
-      switch (timeRange) {
-        case 'weekly':
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          dateFilter = weekAgo.toISOString();
-          break;
-        case 'monthly':
-          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          dateFilter = monthAgo.toISOString();
-          break;
-        default:
-          dateFilter = '1970-01-01'; // All time
-      }
+      const dateFilter = getDateRange();
+      console.log('Date filter:', dateFilter);
 
-      // Load leaderboard data with emissions calculations
+      // Method 1: Try to get data with proper aggregation
       const { data: leaderboardData, error } = await supabase
-        .from('user_profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          total_emissions,
-          eco_points,
-          avatar_url,
-          emissions!user_profiles_id_fkey (
-            amount,
-            created_at
-          )
-        `)
-        .order('total_emissions', { ascending: true })
-        .limit(50);
+        .rpc('get_leaderboard_with_emissions', {
+          time_range: timeRange,
+          start_date: dateFilter
+        });
 
-      if (error) {
-        console.error('Error loading leaderboard:', error);
-        throw error;
+      if (!error && leaderboardData) {
+        console.log('Got data from RPC function:', leaderboardData);
+        setUsers(processLeaderboardData(leaderboardData));
+        return;
       }
 
-      // Process and format the data
-      const processedUsers = leaderboardData.map((user, index) => {
-        // Calculate recent emissions based on time range
+      console.log('RPC function not available, using alternative method');
+      await loadLeaderboardDataAlternative();
+
+    } catch (error) {
+      console.error('Error loading leaderboard data:', error);
+      await loadLeaderboardDataAlternative();
+    }
+  };
+
+  const loadLeaderboardDataAlternative = async () => {
+    try {
+      const dateFilter = getDateRange();
+      
+      // Get all user profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .limit(100);
+
+      if (profilesError) {
+        console.error('Error loading profiles:', profilesError);
+        throw profilesError;
+      }
+
+      console.log('Loaded profiles:', profiles?.length || 0);
+
+      // Get emissions data for the time period
+      const { data: emissions, error: emissionsError } = await supabase
+        .from('emissions')
+        .select('user_id, amount, created_at, category')
+        .gte('created_at', dateFilter + 'T00:00:00.000Z')
+        .order('created_at', { ascending: false });
+
+      if (emissionsError) {
+        console.warn('Error loading emissions:', emissionsError);
+      }
+
+      console.log('Loaded emissions:', emissions?.length || 0);
+      console.log('Emissions data sample:', emissions?.slice(0, 3));
+
+      // Process the data
+      const processedUsers = profiles.map(user => {
+        // Calculate recent emissions for this user
         let recentEmissions = 0;
-        if (user.emissions && user.emissions.length > 0) {
-          recentEmissions = user.emissions
-            .filter(emission => new Date(emission.created_at) >= new Date(dateFilter))
-            .reduce((sum, emission) => sum + (parseFloat(emission.amount) || 0), 0);
+        let emissionCount = 0;
+        
+        if (emissions) {
+          const userEmissions = emissions.filter(emission => emission.user_id === user.id);
+          recentEmissions = userEmissions.reduce((sum, emission) => {
+            const amount = parseFloat(emission.amount) || 0;
+            emissionCount++;
+            return sum + amount;
+          }, 0);
+          
+          console.log(`User ${user.full_name || user.email}: ${emissionCount} emissions, total: ${recentEmissions}`);
         }
+
+        // Use recent emissions if available, otherwise fall back to total_emissions
+        const displayEmissions = timeRange === 'all-time' ? 
+          (user.total_emissions || 0) : 
+          (recentEmissions > 0 ? recentEmissions : (user.total_emissions || 0));
 
         return {
           id: user.id,
           name: user.full_name || user.email?.split('@')[0] || 'Anonymous',
-          emissions: recentEmissions > 0 ? recentEmissions : (user.total_emissions || 0),
+          emissions: displayEmissions,
           totalEmissions: user.total_emissions || 0,
           ecoPoints: user.eco_points || 0,
           avatar_url: user.avatar_url,
           isCurrentUser: currentUser?.id === user.id,
-          rank: index + 1
+          rank: 0 // Will be set after sorting
         };
       });
 
-      // Sort by emissions (lower is better for carbon footprint)
-      const sortedUsers = processedUsers.sort((a, b) => a.emissions - b.emissions);
+      // Filter out users with 0 emissions for better display
+      const usersWithEmissions = processedUsers.filter(user => user.emissions > 0);
       
-      // Update ranks after sorting
+      // Sort by emissions (lower is better for carbon footprint)
+      const sortedUsers = usersWithEmissions.sort((a, b) => a.emissions - b.emissions);
+      
+      // Add ranks
       const rankedUsers = sortedUsers.map((user, index) => ({
         ...user,
         rank: index + 1
       }));
 
+      console.log('Final processed users:', rankedUsers.length);
+      console.log('Top 3 users:', rankedUsers.slice(0, 3).map(u => ({ name: u.name, emissions: u.emissions })));
+
       setUsers(rankedUsers);
 
     } catch (error) {
-      console.error('Error loading leaderboard data:', error);
-      // Use fallback data if real data fails
+      console.error('Alternative loading method failed:', error);
       setUsers(getFallbackLeaderboardData());
     }
   };
 
-  const ensureSampleData = async () => {
-    try {
-      // Check if we have any users in the leaderboard
-      const { data: existingUsers, error } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, total_emissions')
-        .limit(5);
-
-      if (error) throw error;
-
-      // If we have less than 3 users, create some sample data
-      if (!existingUsers || existingUsers.length < 3) {
-        console.log('Creating sample leaderboard data...');
-        await createSampleUsers();
-      } else {
-        // Update existing users with some emissions data if they have none
-        for (const user of existingUsers) {
-          if (!user.total_emissions || user.total_emissions === 0) {
-            const randomEmissions = Math.random() * 15 + 2; // 2-17 kg CO2
-            await supabase
-              .from('user_profiles')
-              .update({ total_emissions: randomEmissions })
-              .eq('id', user.id);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error ensuring sample data:', error);
-    }
-  };
-
-  const createSampleUsers = async () => {
-    try {
-      // Sample users data
-      const sampleUsers = [
-        { name: 'Sarah Green', emissions: 6.2, points: 150 },
-        { name: 'John Eco', emissions: 8.5, points: 120 },
-        { name: 'Emma Carbon', emissions: 5.8, points: 180 },
-        { name: 'Mike Clean', emissions: 9.2, points: 100 },
-        { name: 'Lisa Pure', emissions: 7.3, points: 140 },
-      ];
-
-      // Note: This won't actually create users in auth.users, 
-      // but will create profiles if your RLS allows it
-      // In a real app, you'd need actual authenticated users
-      
-      for (const sampleUser of sampleUsers) {
-        // Create a dummy user profile (this might fail due to RLS)
-        // In production, you'd have real users signing up
-        await supabase
-          .from('user_profiles')
-          .upsert({
-            id: `sample-${sampleUser.name.toLowerCase().replace(' ', '-')}`,
-            full_name: sampleUser.name,
-            email: `${sampleUser.name.toLowerCase().replace(' ', '.')}@example.com`,
-            total_emissions: sampleUser.emissions,
-            eco_points: sampleUser.points,
-          }, { onConflict: 'id' })
-          .select();
-      }
-
-      console.log('Sample users created');
-    } catch (error) {
-      console.error('Error creating sample users:', error);
-    }
+  const processLeaderboardData = (data) => {
+    return data.map((user, index) => ({
+      id: user.id || user.user_id,
+      name: user.full_name || user.email?.split('@')[0] || 'Anonymous',
+      emissions: parseFloat(user.recent_emissions) || parseFloat(user.total_emissions) || 0,
+      totalEmissions: parseFloat(user.total_emissions) || 0,
+      ecoPoints: user.eco_points || 0,
+      avatar_url: user.avatar_url,
+      isCurrentUser: currentUser?.id === (user.id || user.user_id),
+      rank: index + 1
+    }));
   };
 
   const getFallbackLeaderboardData = () => [
@@ -390,6 +417,13 @@ export default function LeaderboardScreen() {
         </View>
       </View>
 
+      {/* Debug Info */}
+      <View style={styles.debugContainer}>
+        <Text style={[styles.debugText, { color: theme.secondaryText }]}>
+          Range: {timeRange} | Users: {users.length} | Updated: {new Date().toLocaleTimeString()}
+        </Text>
+      </View>
+
       {/* Leaderboard List */}
       <FlatList
         data={users}
@@ -453,6 +487,14 @@ export default function LeaderboardScreen() {
             <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
               No leaderboard data available
             </Text>
+            <TouchableOpacity 
+              style={[styles.retryButton, { borderColor: theme.accentText }]}
+              onPress={() => loadLeaderboardData()}
+            >
+              <Text style={[styles.retryText, { color: theme.accentText }]}>
+                Retry Loading
+              </Text>
+            </TouchableOpacity>
           </View>
         }
       />
@@ -524,6 +566,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 5,
   },
+  debugContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  debugText: {
+    fontSize: 10,
+    textAlign: 'center',
+  },
   card: {
     flexDirection: 'row',
     marginHorizontal: 15,
@@ -577,5 +627,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 20,
     textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

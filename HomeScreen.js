@@ -12,33 +12,12 @@ import {
   ScrollView,
   FlatList,
 } from 'react-native';
-import { supabase, addEmission } from './src/api/supabase';
+import { supabase, addEmission, testDatabaseConnection, debugEmissionInsert,incrementEcoPoints  } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
-
-// Import store with error handling
-let useCarbonStore = null;
-try {
-  const carbonStoreModule = require('./src/store/carbonStore');
-  if (carbonStoreModule && carbonStoreModule.useCarbonStore) {
-    useCarbonStore = carbonStoreModule.useCarbonStore;
-  } else {
-    throw new Error('useCarbonStore not found in module');
-  }
-} catch (error) {
-  console.warn('CarbonStore not available, using fallback:', error.message);
-  useCarbonStore = () => ({
-    addEmission: () => console.log('Fallback addEmission called'),
-    earnTokens: () => console.log('Fallback earnTokens called'),
-    dailyEmissions: 7.5,
-    tokens: 25,
-    achievements: [],
-    loadFromStorage: () => Promise.resolve(),
-  });
-}
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
-// Helper functions for real-time data
+// Helper functions for backend integration
 const getUserProfile = async (userId) => {
   try {
     const { data, error } = await supabase
@@ -55,6 +34,125 @@ const getUserProfile = async (userId) => {
   }
 };
 
+const getDailyEmissions = async (userId) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    
+    const { data, error } = await supabase
+      .from('emissions')
+      .select('amount')
+      .eq('user_id', userId)
+      .gte('created_at', today.toISOString())
+      .lt('created_at', tomorrow.toISOString());
+
+    if (error) throw error;
+    
+    const total = data?.reduce((sum, emission) => sum + parseFloat(emission.amount), 0) || 0;
+    return { total, error: null };
+  } catch (error) {
+    console.error('Error loading daily emissions:', error);
+    return { total: 0, error };
+  }
+};
+
+const getUserAchievements = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_achievements')
+      .select(`
+        id,
+        earned_at,
+        tokens_earned,
+        achievement_definitions (
+          name,
+          description,
+          emoji,
+          category
+        )
+      `)
+      .eq('user_id', userId)
+      .order('earned_at', { ascending: false });
+
+    if (error) throw error;
+    
+    const achievements = data?.map(ua => ({
+      id: ua.id,
+      name: ua.achievement_definitions?.name || 'Achievement',
+      description: ua.achievement_definitions?.description || '',
+      emoji: ua.achievement_definitions?.emoji || '🏆',
+      category: ua.achievement_definitions?.category || 'general',
+      earnedAt: ua.earned_at,
+      tokensEarned: ua.tokens_earned
+    })) || [];
+    
+    return { achievements, error: null };
+  } catch (error) {
+    console.error('Error loading achievements:', error);
+    // Return fallback achievements if backend fails
+    return { 
+      achievements: [
+        { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
+        { name: 'Week Warrior', emoji: '🔥', description: '7 day streak' },
+      ], 
+      error 
+    };
+  }
+};
+
+const getWeeklyEmissions = async (userId) => {
+  try {
+    const weekData = [];
+    const today = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date();
+      day.setDate(today.getDate() - i);
+      day.setHours(0, 0, 0, 0);
+      
+      const nextDay = new Date(day);
+      nextDay.setDate(day.getDate() + 1);
+      
+      const { data: dayEmissions } = await supabase
+        .from('emissions')
+        .select('amount')
+        .eq('user_id', userId)
+        .gte('created_at', day.toISOString())
+        .lt('created_at', nextDay.toISOString());
+
+      const dayTotal = dayEmissions?.reduce((sum, emission) => sum + parseFloat(emission.amount), 0) || 0;
+      weekData.push(dayTotal);
+    }
+    
+    return { weekData, error: null };
+  } catch (error) {
+    console.error('Error loading weekly data:', error);
+    return { weekData: [0, 0, 0, 0, 0, 0, 0], error };
+  }
+};
+
+const updateUserEcoPoints = async (userId, pointsToAdd) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ 
+        eco_points: supabase.raw(`eco_points + ${pointsToAdd}`),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select('eco_points')
+      .single();
+
+    if (error) throw error;
+    return { newPoints: data.eco_points, error: null };
+  } catch (error) {
+    console.error('Error updating eco points:', error);
+    return { newPoints: null, error };
+  }
+};
+
 const subscribeToUserUpdates = (userId, callback) => {
   return supabase
     .channel(`profile_${userId}`)
@@ -65,6 +163,22 @@ const subscribeToUserUpdates = (userId, callback) => {
         schema: 'public',
         table: 'user_profiles',
         filter: `id=eq.${userId}`,
+      },
+      callback
+    )
+    .subscribe();
+};
+
+const subscribeToEmissionsUpdates = (userId, callback) => {
+  return supabase
+    .channel(`emissions_${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'emissions',
+        filter: `user_id=eq.${userId}`,
       },
       callback
     )
@@ -120,6 +234,7 @@ const AchievementBadge = ({ achievement, size = 'small', theme, isDarkMode }) =>
 const EmissionChart = ({ data, theme, isDarkMode }) => {
   const maxValue = data ? Math.max(...data) : 10;
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const averageValue = data && data.length > 0 ? (data.reduce((a, b) => a + b, 0) / data.length) : 0;
   
   return (
     <View style={[
@@ -132,7 +247,7 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
       <View style={styles.chartHeader}>
         <Text style={[styles.chartText, { color: theme.accentText }]}>📊 Weekly Emissions</Text>
         <Text style={[styles.chartAverage, { color: theme.secondaryText }]}>
-          {data ? `Avg: ${(data.reduce((a, b) => a + b, 0) / data.length).toFixed(1)}kg` : 'No data'}
+          Avg: {averageValue.toFixed(1)}kg
         </Text>
       </View>
       
@@ -148,7 +263,7 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
                   style={[
                     styles.bar, 
                     { 
-                      height: `${(value / maxValue) * 100}%`,
+                      height: maxValue > 0 ? `${(value / maxValue) * 100}%` : '0%',
                       backgroundColor: value > 8 ? '#EF4444' : value > 6 ? '#F59E0B' : theme.accentText
                     }
                   ]} 
@@ -178,29 +293,25 @@ export default function HomeScreen() {
   // Theme hook
   const { theme, isDarkMode } = useTheme();
   
-  // Store state
-  const storeState = useCarbonStore ? useCarbonStore() : null;
-  
-  // Profile and notifications state
+  // Backend-connected state
   const [profile, setProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   
-  // User data state
+  // User data state (all from backend)
   const [userName, setUserName] = useState('User');
-  const [dailyEmissions, setDailyEmissions] = useState(storeState?.dailyEmissions || 7.5);
-  const [achievements, setAchievements] = useState(storeState?.achievements || [
-    { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
-    { name: 'Week Warrior', emoji: '🔥', description: '7 day streak' },
-  ]);
-  const [tokens, setTokens] = useState(storeState?.tokens || 25);
-  const [streak, setStreak] = useState(5);
-  const [weeklyData, setWeeklyData] = useState([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
-  const [recentAchievements, setRecentAchievements] = useState([]);
+  const [dailyEmissions, setDailyEmissions] = useState(0);
+  const [achievements, setAchievements] = useState([]);
+  const [tokens, setTokens] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [weeklyData, setWeeklyData] = useState([0, 0, 0, 0, 0, 0, 0]);
   
   // Modal state
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [emissionAmount, setEmissionAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // Emission categories
   const categories = [
@@ -211,30 +322,30 @@ export default function HomeScreen() {
     { id: 'waste', name: 'Waste', emoji: '🗑️', factor: 0.1 },
   ];
 
-  // Main useEffect with profile creation and subscriptions
+  // Main initialization effect
   useEffect(() => {
     let mounted = true;
     let subscriptions = [];
 
     const initializeData = async () => {
+      setLoading(true);
+      
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         
         if (error || !user || !mounted) {
           console.error('Auth error:', error);
+          setLoading(false);
           return;
         }
 
-        // Load user profile with creation if missing
-        const { data: profileData } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle();
+        console.log('Initializing HomeScreen for user:', user.id);
 
-        if (!profileData && mounted) {
-          // Create profile if it doesn't exist
-          console.log('No profile found, creating new profile for user:', user.id);
+        // Load or create user profile
+        let userProfile = await getUserProfile(user.id);
+        
+        if (!userProfile.data && mounted) {
+          console.log('Creating new profile...');
           const email = user.email || 'user@example.com';
           const { data: newProfile, error: createError } = await supabase
             .from('user_profiles')
@@ -249,28 +360,42 @@ export default function HomeScreen() {
               streak_count: 0,
               last_activity_date: new Date().toISOString().split('T')[0],
               is_premium: false,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
             })
             .select()
             .single();
 
-          if (createError) {
-            console.error('Error creating profile:', createError);
-          } else if (newProfile && mounted) {
-            setProfile(newProfile);
-            setUserName(newProfile.full_name || 'User');
-            setTokens(newProfile.eco_points || 0);
-            setStreak(newProfile.streak_count || 0);
+          if (!createError && newProfile && mounted) {
+            userProfile.data = newProfile;
             console.log('New profile created:', newProfile);
           }
-        } else if (profileData && mounted) {
-          setProfile(profileData);
-          const name = profileData.full_name || user.email?.split('@')[0] || 'User';
-          setUserName(name);
-          if (profileData.eco_points) setTokens(profileData.eco_points);
-          if (profileData.streak_count) setStreak(profileData.streak_count);
-          console.log('Profile data loaded:', profileData);
+        }
+
+        if (userProfile.data && mounted) {
+          setProfile(userProfile.data);
+          setUserName(userProfile.data.full_name || user.email?.split('@')[0] || 'User');
+          setTokens(userProfile.data.eco_points || 0);
+          setStreak(userProfile.data.streak_count || 0);
+        }
+
+        // Load all backend data in parallel
+        const [dailyResult, achievementsResult, weeklyResult] = await Promise.all([
+          getDailyEmissions(user.id),
+          getUserAchievements(user.id),
+          getWeeklyEmissions(user.id)
+        ]);
+
+        if (mounted) {
+          if (dailyResult.total !== undefined) {
+            setDailyEmissions(dailyResult.total);
+          }
+          
+          if (achievementsResult.achievements) {
+            setAchievements(achievementsResult.achievements);
+          }
+          
+          if (weeklyResult.weekData) {
+            setWeeklyData(weeklyResult.weekData);
+          }
         }
 
         // Set up real-time subscriptions
@@ -279,9 +404,17 @@ export default function HomeScreen() {
             console.log('Profile updated:', payload);
             if (payload.new) {
               setProfile(payload.new);
-              if (payload.new.eco_points) setTokens(payload.new.eco_points);
-              if (payload.new.streak_count) setStreak(payload.new.streak_count);
+              setTokens(payload.new.eco_points || 0);
+              setStreak(payload.new.streak_count || 0);
             }
+          }
+        });
+
+        const emissionsSubscription = subscribeToEmissionsUpdates(user.id, (payload) => {
+          if (mounted) {
+            console.log('Emissions updated:', payload);
+            // Refresh daily emissions and weekly data
+            refreshData();
           }
         });
 
@@ -299,20 +432,15 @@ export default function HomeScreen() {
           }
         });
 
-        subscriptions.push(profileSubscription, notificationSubscription);
-
-        // Load other data
-        await loadAchievements();
-        await loadWeeklyChartData();
+        subscriptions.push(profileSubscription, emissionsSubscription, notificationSubscription);
         
-        console.log('HomeScreen loaded successfully with real-time subscriptions');
+        console.log('HomeScreen fully initialized with backend connections');
         
       } catch (error) {
         console.error('Error initializing HomeScreen:', error);
+      } finally {
         if (mounted) {
-          loadUserData();
-          loadAchievements();
-          loadWeeklyChartData();
+          setLoading(false);
         }
       }
     };
@@ -329,97 +457,87 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const loadUserData = async () => {
+  // Refresh all data from backend
+  const refreshData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const name = user.email?.split('@')[0] || 'User';
-        setUserName(name);
-        console.log('User data loaded:', name);
+      if (!user) return;
+
+      const [dailyResult, weeklyResult] = await Promise.all([
+        getDailyEmissions(user.id),
+        getWeeklyEmissions(user.id)
+      ]);
+
+      if (dailyResult.total !== undefined) {
+        setDailyEmissions(dailyResult.total);
+      }
+      
+      if (weeklyResult.weekData) {
+        setWeeklyData(weeklyResult.weekData);
       }
     } catch (error) {
-      console.error('Error loading user data:', error);
-      setUserName('EcoWarrior');
+      console.error('Error refreshing data:', error);
     }
   };
 
-  const loadAchievements = async () => {
-    try {
-      setRecentAchievements(achievements.slice(0, 3));
-    } catch (error) {
-      console.error('Error loading achievements:', error);
-    }
-  };
+  // Submit emission with full backend integration
+const submitEmission = async () => {
+  if (!selectedCategory || !emissionAmount) {
+    Alert.alert('Error', 'Please select a category and enter an amount');
+    return;
+  }
 
-  const loadWeeklyChartData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const weekData = [];
-        const today = new Date();
-        
-        for (let i = 6; i >= 0; i--) {
-          const day = new Date();
-          day.setDate(today.getDate() - i);
-          day.setHours(0, 0, 0, 0);
-          
-          const nextDay = new Date(day);
-          nextDay.setDate(day.getDate() + 1);
-          
-          const { data: dayEmissions } = await supabase
-            .from('emissions')
-            .select('amount')
-            .eq('user_id', user.id)
-            .gte('created_at', day.toISOString())
-            .lt('created_at', nextDay.toISOString());
+  const amount = parseFloat(emissionAmount);
+  if (isNaN(amount) || amount <= 0) {
+    Alert.alert('Error', 'Please enter a valid amount');
+    return;
+  }
 
-            console.log(`Emissions for ${day.toISOString().split('T')[0]}:`, dayEmissions);
-          
-          const dayTotal = dayEmissions?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-          weekData.push(dayTotal);
-        }
-        console.log('Weekly chart data loaded:', weekData);
-        setWeeklyData(weekData);
-      }
-    } catch (error) {
-      console.error('Error loading weekly data:', error);
-      setWeeklyData([6.5, 7.2, 5.8, 8.1, 6.9, 7.5, 7.5]);
-    }
-  };
-
-  const submitEmission = async () => {
-    if (!selectedCategory || !emissionAmount) {
-      Alert.alert('Error', 'Please select a category and enter an amount');
-      return;
+  setSubmitting(true);
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
     }
 
-    const amount = parseFloat(emissionAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
+    // Use the improved addEmission function
+    const result = await addEmission(user.id, selectedCategory, amount);
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to add emission');
     }
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await addEmission(user.id, selectedCategory, amount);
-        setDailyEmissions(prev => prev + amount);
-        setTokens(prev => prev + 5);
-        
-        loadWeeklyChartData();
-        
-        setEmissionAmount('');
-        setSelectedCategory('');
-        setModalVisible(false);
-        Alert.alert('Success', 'Emission logged successfully!');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to log emission. Please try again.');
-      console.error('Error submitting emission:', error);
+    // Award eco points
+    const pointsAwarded = await incrementEcoPoints(user.id, 5);
+    if (pointsAwarded) {
+      setTokens(pointsAwarded);
     }
-  };
+    
+    // Update UI
+    setDailyEmissions(prev => prev + amount);
+    
+    // Refresh data
+    if (typeof refreshData === 'function') {
+      await refreshData();
+    }
+    
+    // Reset form
+    setEmissionAmount('');
+    setSelectedCategory('');
+    setModalVisible(false);
+    
+    Alert.alert('Success! 🎉', 'Emission logged successfully!\n+5 eco points earned!');
+    
+  } catch (error) {
+    console.error('Error submitting emission:', error);
+    Alert.alert('Error', error.message || 'Failed to log emission. Please try again.');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
-  const DAILY_GOAL = 50;
+  const DAILY_GOAL = profile?.weekly_goal || 50;
 
   const getProgressColor = () => {
     const percentage = (dailyEmissions / DAILY_GOAL) * 100;
@@ -454,6 +572,31 @@ export default function HomeScreen() {
 
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
+        
+        {isDarkMode && (
+          <>
+            <ImageBackground 
+              source={BACKGROUND_IMAGE} 
+              resizeMode="cover" 
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.overlayBackground }]} />
+          </>
+        )}
+
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: theme.primaryText }]}>
+            Loading your carbon dashboard...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
@@ -481,8 +624,9 @@ export default function HomeScreen() {
         style={styles.scrollContainer} 
         showsVerticalScrollIndicator={true}
         indicatorStyle={isDarkMode ? "white" : "black"}
-        scrollIndicatorInsets={{ right: 1 }}
         contentContainerStyle={styles.scrollContent}
+        onRefresh={refreshData}
+        refreshing={refreshing}
       >
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -524,11 +668,15 @@ export default function HomeScreen() {
         </View>
 
         <TouchableOpacity 
-          style={[dynamicStyles.quickAddButton]}
+          style={[
+            dynamicStyles.quickAddButton,
+            submitting && { opacity: 0.6 }
+          ]}
           onPress={() => setModalVisible(true)}
+          disabled={submitting}
         >
           <Text style={[styles.quickAddText, { color: theme.buttonText }]}>
-            + Log Emission
+            {submitting ? 'Logging...' : '+ Log Emission'}
           </Text>
         </TouchableOpacity>
 
@@ -569,18 +717,24 @@ export default function HomeScreen() {
 
         <View style={[dynamicStyles.card]}>
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
-            Your Achievements
+            Your Achievements ({achievements.length})
           </Text>
           <View style={styles.achievementsList}>
-            {achievements.map((achievement, index) => (
-              <AchievementBadge 
-                key={index} 
-                achievement={achievement} 
-                size="small"
-                theme={theme}
-                isDarkMode={isDarkMode}
-              />
-            ))}
+            {achievements.length > 0 ? (
+              achievements.slice(0, 6).map((achievement, index) => (
+                <AchievementBadge 
+                  key={index} 
+                  achievement={achievement} 
+                  size="small"
+                  theme={theme}
+                  isDarkMode={isDarkMode}
+                />
+              ))
+            ) : (
+              <Text style={[styles.noAchievementsText, { color: theme.secondaryText }]}>
+                No achievements yet. Keep logging emissions to earn your first badge! 🏆
+              </Text>
+            )}
           </View>
         </View>
 
@@ -633,6 +787,7 @@ export default function HomeScreen() {
               placeholder="Enter amount..."
               keyboardType="numeric"
               placeholderTextColor={theme.secondaryText}
+              editable={!submitting}
             />
             
             <View style={styles.modalButtons}>
@@ -641,6 +796,7 @@ export default function HomeScreen() {
                   styles.cancelButton,
                   {
                     backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider,
+                    opacity: submitting ? 0.6 : 1
                   }
                 ]}
                 onPress={() => {
@@ -648,6 +804,7 @@ export default function HomeScreen() {
                   setSelectedCategory('');
                   setEmissionAmount('');
                 }}
+                disabled={submitting}
               >
                 <Text style={[styles.cancelButtonText, { color: theme.secondaryText }]}>
                   Cancel
@@ -657,12 +814,16 @@ export default function HomeScreen() {
               <TouchableOpacity 
                 style={[
                   styles.submitButton,
-                  { backgroundColor: theme.buttonBackground }
+                  { 
+                    backgroundColor: theme.buttonBackground,
+                    opacity: submitting ? 0.6 : 1
+                  }
                 ]}
                 onPress={submitEmission}
+                disabled={submitting}
               >
                 <Text style={[styles.submitButtonText, { color: theme.buttonText }]}>
-                  Log Emission
+                  {submitting ? 'Logging...' : 'Log Emission'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -723,6 +884,16 @@ const createDynamicStyles = (theme, isDarkMode) => ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
   scrollContainer: {
     flex: 1,
@@ -864,7 +1035,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
   },
-  
   progressContainer: {
     marginTop: 10,
   },
@@ -882,13 +1052,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 10,
   },
+  goalHint: {
+    textAlign: 'center',
+  },
   achievementsList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-around',
   },
-  
-  // Achievement Badge
   achievementBadge: {
     borderRadius: 12,
     padding: 12,
@@ -906,7 +1077,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.9,
   },
-
+  noAchievementsText: {
+    textAlign: 'center',
+    fontSize: 14,
+    fontStyle: 'italic',
+    paddingVertical: 20,
+  },
   bottomSpacing: {
     height: 100,
   },
