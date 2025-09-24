@@ -1,5 +1,4 @@
-// App.js - Complete Updated Version with New Screen Navigation
-
+// App.js - Updated with Onboarding Flow
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -8,21 +7,27 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-// Import ALL your screens
+// Import ALL screens including onboarding
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
+
+// Onboarding Screens
+import WelcomeScreen from './src/screens/onboarding/WelcomeScreen';
+import PermissionsScreen from './src/screens/onboarding/PermissionsScreen';
+import SetupScreen from './src/screens/onboarding/SetupScreen';
+
+// Main Screens
 import HomeScreen from './HomeScreen';
 import TrackingScreen from './TrackingScreen';
 import ProfileScreen from './ProfileScreen'; 
 import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
 import ChallengesScreen from './src/screens/main/ChallengesScreen';
-
-// Import NEW screens
 import GiftVoucherScreen from './src/screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from './src/screens/main/CarbonOffsetScreen';
 
@@ -33,7 +38,21 @@ const prefix = Linking.createURL('/');
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// AuthStack (unchanged)
+// Onboarding Stack
+function OnboardingStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
+      <Stack.Screen name="Permissions" component={PermissionsScreen} />
+      <Stack.Screen name="Setup" component={SetupScreen} />
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// Auth Stack
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -90,14 +109,11 @@ function MainTabs() {
   );
 }
 
-// Main Stack Navigator (NEW - includes additional screens)
+// Main Stack Navigator
 function MainStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Main tabs as the default screen */}
       <Stack.Screen name="MainTabs" component={MainTabs} />
-      
-      {/* Additional screens that can be navigated to */}
       <Stack.Screen 
         name="GiftVoucher" 
         component={GiftVoucherScreen}
@@ -123,6 +139,7 @@ function MainStackNavigator() {
 // App Content Component
 function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isFirstLaunch, setIsFirstLaunch] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const { theme } = useTheme();
 
@@ -130,6 +147,20 @@ function AppContent() {
     prefixes: [prefix],
     config: {
       screens: {
+        Onboarding: {
+          screens: {
+            Welcome: 'welcome',
+            Permissions: 'permissions',
+            Setup: 'setup',
+          },
+        },
+        Auth: {
+          screens: {
+            Login: 'login',
+            Register: 'register',
+            ForgotPassword: 'forgot-password',
+          },
+        },
         Main: {
           screens: {
             MainTabs: {
@@ -145,24 +176,45 @@ function AppContent() {
             CarbonOffset: 'carbon-offset',
           },
         },
-        Auth: {
-          screens: {
-            Login: 'login',
-            Register: 'register',
-            ForgotPassword: 'forgot-password',
-          },
-        },
       },
     },
   };
 
   useEffect(() => {
-    // Check the initial session state
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session);
-      setIsLoading(false);
-    });
+    checkFirstLaunch();
+  }, []);
 
+  const checkFirstLaunch = async () => {
+    try {
+      // Check if this is the first launch
+      const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+      const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
+      
+      if (hasLaunched === null) {
+        // First time launch
+        await AsyncStorage.setItem('hasLaunched', 'true');
+        setIsFirstLaunch(true);
+      } else if (onboardingComplete !== 'true') {
+        // Has launched but didn't complete onboarding
+        setIsFirstLaunch(true);
+      } else {
+        // Not first launch and onboarding complete
+        setIsFirstLaunch(false);
+      }
+
+      // Check the session state
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session);
+      
+    } catch (error) {
+      console.error('Error checking first launch:', error);
+      setIsFirstLaunch(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     // Set up the real-time listener for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
@@ -191,9 +243,14 @@ function AppContent() {
   return (
     <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isLoggedIn ? (
+        {isFirstLaunch ? (
+          // Show onboarding for first-time users
+          <Stack.Screen name="Onboarding" component={OnboardingStack} />
+        ) : isLoggedIn ? (
+          // Show main app for logged-in users
           <Stack.Screen name="Main" component={MainStackNavigator} />
         ) : (
+          // Show auth for non-logged-in returning users
           <Stack.Screen name="Auth" component={AuthStack} />
         )}
       </Stack.Navigator>
