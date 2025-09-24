@@ -1,4 +1,4 @@
-// src/components/carbon/ActivityTracker.js
+// Fixed ActivityTracker component - resolves nested VirtualizedList error
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,9 +14,63 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
-import { Colors } from '../../styles/colors';
-import { Typography, FontWeight } from '../../styles/fonts';
-import { Shadows, BorderRadius, Spacing } from '../../styles/globalStyles';
+
+// Your existing constants (Colors, Typography, etc.) remain the same...
+const Colors = {
+  primary: '#10B981',
+  warning: '#F59E0B',
+  success: '#10B981',
+  accent: '#F59E0B',
+  white: '#FFFFFF',
+  primaryBackground: '#D1FAE5',
+  gray: { 500: '#6B7280', 400: '#9CA3AF' },
+  dark: { card: 'rgba(55, 65, 81, 0.8)' },
+};
+
+const Typography = {
+  h6: { fontSize: 18, fontWeight: '600' },
+  body: { fontSize: 16 },
+  bodySmall: { fontSize: 14 },
+  captionSmall: { fontSize: 12 },
+};
+
+const FontWeight = {
+  medium: '500',
+  semiBold: '600',
+  bold: '700',
+};
+
+const BorderRadius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  full: 9999,
+};
+
+const Spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+};
+
+const Shadows = {
+  small: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  medium: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+};
 
 const ACTIVITY_TYPES = {
   transport: {
@@ -91,22 +145,44 @@ export default function ActivityTracker({ onActivityAdded }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Load recent activities from Supabase
+      // Try carbon_activities table first, fallback to emissions
       const { data: activities, error } = await supabase
         .from('carbon_activities')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(5); // Reduced to 5 for horizontal scroll
 
       if (error) {
-        console.error('Error loading activities:', error);
+        // Fallback to emissions table
+        const { data: emissions } = await supabase
+          .from('emissions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        
+        const convertedActivities = emissions?.map(e => ({
+          id: e.id,
+          user_id: e.user_id,
+          category: e.category,
+          activity_type: e.category,
+          activity_name: e.category,
+          amount: e.amount,
+          unit: 'kg CO₂',
+          carbon_kg: e.amount,
+          description: e.description,
+          created_at: e.created_at,
+        })) || [];
+        
+        setRecentActivities(convertedActivities);
         return;
       }
 
       setRecentActivities(activities || []);
     } catch (error) {
       console.error('Error loading recent activities:', error);
+      setRecentActivities([]);
     }
   };
 
@@ -138,33 +214,57 @@ export default function ActivityTracker({ onActivityAdded }) {
 
       const carbonEmissions = numericAmount * selectedActivity.factor;
       
-      const activityData = {
-        user_id: user.id,
-        category: selectedCategory,
-        activity_type: selectedActivity.id,
-        activity_name: selectedActivity.label,
-        amount: numericAmount,
-        unit: selectedActivity.unit,
-        carbon_kg: carbonEmissions,
-        description: description.trim() || null,
-        created_at: new Date().toISOString(),
-      };
-
-      // Save to Supabase
-      const { error } = await supabase
+      // Try carbon_activities first, fallback to emissions
+      let saveError = null;
+      
+      const { error: activityError } = await supabase
         .from('carbon_activities')
-        .insert([activityData]);
+        .insert([{
+          user_id: user.id,
+          category: selectedCategory,
+          activity_type: selectedActivity.id,
+          activity_name: selectedActivity.label,
+          amount: numericAmount,
+          unit: selectedActivity.unit,
+          carbon_kg: carbonEmissions,
+          description: description.trim() || null,
+        }]);
 
-      if (error) {
-        console.error('Error saving activity:', error);
+      if (activityError && activityError.message?.includes('carbon_activities')) {
+        // Fallback to emissions table
+        const { error: emissionError } = await supabase
+          .from('emissions')
+          .insert([{
+            user_id: user.id,
+            category: selectedCategory,
+            amount: carbonEmissions,
+            description: `${selectedActivity.label}: ${numericAmount} ${selectedActivity.unit}`,
+          }]);
+        
+        saveError = emissionError;
+      } else {
+        saveError = activityError;
+      }
+
+      if (saveError) {
+        console.error('Error saving activity:', saveError);
         Alert.alert('Error', 'Failed to save activity. Please try again.');
         return;
       }
 
+      // Create activity data for callback
+      const activityData = {
+        category: selectedCategory,
+        carbon_kg: carbonEmissions,
+        activity_name: selectedActivity.label,
+        amount: numericAmount,
+        unit: selectedActivity.unit,
+      };
+
       // Update recent activities
-      setRecentActivities([activityData, ...recentActivities.slice(0, 9)]);
+      await loadRecentActivities();
       
-      // Callback to parent component
+      // Callback to parent
       onActivityAdded?.(activityData);
 
       Alert.alert(
@@ -271,7 +371,7 @@ export default function ActivityTracker({ onActivityAdded }) {
           />
           <View style={styles.recentActivityInfo}>
             <Text style={[styles.recentActivityName, { color: theme.primaryText }]}>
-              {activity.activity_name}
+              {activity.activity_name || activity.category}
             </Text>
             <Text style={[styles.recentActivityDate, { color: theme.secondaryText }]}>
               {activityDate}
@@ -280,69 +380,95 @@ export default function ActivityTracker({ onActivityAdded }) {
         </View>
         <View style={styles.recentActivityDetails}>
           <Text style={[styles.recentActivityAmount, { color: theme.primaryText }]}>
-            {activity.amount} {activity.unit}
+            {activity.amount} {activity.unit || 'units'}
           </Text>
           <Text style={[styles.recentActivityCarbon, { color: Colors.primary }]}>
-            {activity.carbon_kg.toFixed(2)} kg CO₂
+            {(activity.carbon_kg || activity.amount || 0).toFixed(2)} kg CO₂
           </Text>
         </View>
       </View>
     );
   };
 
+  // FIX: Create a combined data array for the main FlatList
+  const renderMainContent = () => {
+    const sections = [
+      { type: 'categories', data: null },
+      { type: 'activities', data: ACTIVITY_TYPES[selectedCategory].activities },
+      { type: 'recent', data: recentActivities.length > 0 ? recentActivities : null },
+    ];
+
+    return (
+      <FlatList
+        data={sections}
+        keyExtractor={(item, index) => `section-${index}`}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          if (item.type === 'categories') {
+            return (
+              <View style={styles.categoryContainer}>
+                <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
+                  Select Category
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryScroll}
+                >
+                  {Object.entries(ACTIVITY_TYPES).map(([key, category]) => (
+                    <CategoryButton
+                      key={key}
+                      categoryKey={key}
+                      category={category}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            );
+          }
+
+          if (item.type === 'activities') {
+            return (
+              <View style={styles.activitiesContainer}>
+                <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
+                  Add Activity
+                </Text>
+                {item.data.map((activity) => (
+                  <ActivityCard key={activity.id} activity={activity} />
+                ))}
+              </View>
+            );
+          }
+
+          if (item.type === 'recent' && item.data) {
+            return (
+              <View style={styles.recentContainer}>
+                <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
+                  Recent Activities
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.recentScroll}
+                >
+                  {item.data.map((activity, index) => (
+                    <RecentActivityCard key={`${activity.id || index}`} activity={activity} />
+                  ))}
+                </ScrollView>
+              </View>
+            );
+          }
+
+          return null;
+        }}
+      />
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Category Selection */}
-      <View style={styles.categoryContainer}>
-        <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
-          Select Category
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryScroll}
-        >
-          {Object.entries(ACTIVITY_TYPES).map(([key, category]) => (
-            <CategoryButton
-              key={key}
-              categoryKey={key}
-              category={category}
-            />
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Activities List */}
-      <View style={styles.activitiesContainer}>
-        <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
-          Add Activity
-        </Text>
-        <FlatList
-          data={ACTIVITY_TYPES[selectedCategory].activities}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <ActivityCard activity={item} />}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.activitiesList}
-        />
-      </View>
-
-      {/* Recent Activities */}
-      {recentActivities.length > 0 && (
-        <View style={styles.recentContainer}>
-          <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
-            Recent Activities
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.recentScroll}
-          >
-            {recentActivities.slice(0, 5).map((activity, index) => (
-              <RecentActivityCard key={`${activity.id || index}`} activity={activity} />
-            ))}
-          </ScrollView>
-        </View>
-      )}
+      {/* Use the combined FlatList instead of nested ScrollViews */}
+      {renderMainContent()}
 
       {/* Add Activity Modal */}
       <Modal
@@ -488,6 +614,7 @@ export default function ActivityTracker({ onActivityAdded }) {
   );
 }
 
+// Styles remain the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -526,10 +653,8 @@ const styles = StyleSheet.create({
 
   // Activities
   activitiesContainer: {
-    flex: 1,
-  },
-  activitiesList: {
     paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
   },
   activityCard: {
     flexDirection: 'row',
@@ -613,7 +738,7 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
   },
   modalTitle: {
-    ...Typography.h5,
+    fontSize: 18,
     fontWeight: FontWeight.semiBold,
   },
   modalContent: {
@@ -630,7 +755,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   selectedActivityName: {
-    ...Typography.h6,
+    fontSize: 18,
     fontWeight: FontWeight.semiBold,
     marginTop: Spacing.sm,
     textAlign: 'center',
@@ -679,7 +804,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   calculationValue: {
-    ...Typography.h5,
+    fontSize: 20,
     fontWeight: FontWeight.bold,
     marginTop: Spacing.xs,
     textAlign: 'center',
@@ -702,4 +827,8 @@ const styles = StyleSheet.create({
     ...Typography.body,
     fontWeight: FontWeight.semiBold,
   },
+
+  // Fallback styles
+  h5: { fontSize: 18 },
+  h6: { fontSize: 16 },
 });

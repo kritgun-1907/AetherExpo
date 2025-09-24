@@ -1,17 +1,24 @@
-// src/screens/main/ChallengesScreen.js - FIXED VERSION
+// src/screens/main/ChallengesScreen.js - UPDATED WITH SOCIAL COMPONENTS
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
   FlatList, 
-  TouchableOpacity, 
   StyleSheet, 
   Alert, 
   ImageBackground, 
-  StatusBar 
+  StatusBar,
+  ScrollView,
+  TouchableOpacity,
+  Share,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
+
+// Import the social components
+import ChallengeCard from '../../components/social/ChallengeCard';
+import ShareButton from '../../components/social/ShareButton';
 
 // Import store with error handling
 let useCarbonStore = null;
@@ -27,12 +34,9 @@ try {
   });
 }
 
-// Add the same background image import as HomeScreen  
-// Correct path based on your project structure: assets/images/hero-carbon-tracker.jpg
 const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
 
 export default function ChallengesScreen() {
-  // Get theme context with error handling
   const themeContext = useTheme();
   const theme = themeContext?.theme || {
     primaryText: '#111827',
@@ -45,20 +49,113 @@ export default function ChallengesScreen() {
     statusBarStyle: 'dark-content'
   };
   
-  // Get isDarkMode with fallback
   const isDarkMode = themeContext?.isDarkMode || false;
   
-  // Get store with error handling
   const storeState = useCarbonStore ? useCarbonStore() : null;
   const earnTokens = storeState?.earnTokens || (() => {});
 
   const [challenges, setChallenges] = useState([
-    { id: 1, title: 'Zero Emission Day', description: 'Have a day with 0 emissions', reward: 50, emoji: '🌟', active: true },
-    { id: 2, title: 'Public Transport Week', description: 'Use only public transport for a week', reward: 100, emoji: '🚌', active: true },
-    { id: 3, title: 'Vegan Challenge', description: 'Eat only vegan meals for 3 days', reward: 75, emoji: '🌱', active: true },
+    { 
+      id: '1',
+      title: 'Zero Emission Day',
+      description: 'Complete a full day with absolutely zero carbon emissions. Track all your activities and keep them carbon neutral!',
+      emoji: '🌟',
+      challengeType: 'individual',
+      targetValue: 0,
+      targetUnit: 'kg CO₂',
+      currentProgress: 0,
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      rewardTokens: 50,
+      participantCount: 234,
+      isActive: true
+    },
+    { 
+      id: '2',
+      title: 'Public Transport Week',
+      description: 'Use only public transportation, walking, or cycling for all your travels this week. No personal vehicles!',
+      emoji: '🚌',
+      challengeType: 'group',
+      targetValue: 7,
+      targetUnit: 'days',
+      currentProgress: 3,
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      rewardTokens: 100,
+      participantCount: 567,
+      isActive: true
+    },
+    { 
+      id: '3',
+      title: 'Vegan Challenge',
+      description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
+      emoji: '🌱',
+      challengeType: 'global',
+      targetValue: 3,
+      targetUnit: 'days',
+      currentProgress: 1,
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      rewardTokens: 75,
+      participantCount: 892,
+      isActive: true
+    },
+    { 
+      id: '4',
+      title: 'Energy Saver',
+      description: 'Reduce your home energy consumption by 30% this week compared to your average.',
+      emoji: '⚡',
+      challengeType: 'individual',
+      targetValue: 30,
+      targetUnit: '% reduction',
+      currentProgress: 12,
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      rewardTokens: 60,
+      participantCount: 445,
+      isActive: true
+    },
   ]);
 
-  const joinChallenge = (challenge) => {
+  const [joinedChallenges, setJoinedChallenges] = useState([]);
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'joined', 'completed'
+
+  useEffect(() => {
+    loadUserChallenges();
+  }, []);
+
+  const loadUserChallenges = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userChallenges } = await supabase
+        .from('user_challenges')
+        .select('challenge_id, status, current_progress')
+        .eq('user_id', user.id);
+
+      if (userChallenges) {
+        const joinedIds = userChallenges.map(uc => uc.challenge_id);
+        setJoinedChallenges(joinedIds);
+        
+        // Update challenge progress
+        setChallenges(prev => prev.map(challenge => {
+          const userChallenge = userChallenges.find(uc => uc.challenge_id === challenge.id);
+          if (userChallenge) {
+            return {
+              ...challenge,
+              currentProgress: userChallenge.current_progress,
+            };
+          }
+          return challenge;
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading user challenges:', error);
+    }
+  };
+
+  const handleJoinChallenge = async (challenge) => {
     Alert.alert(
       'Join Challenge',
       `Join "${challenge.title}"?`,
@@ -66,20 +163,84 @@ export default function ChallengesScreen() {
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Join', 
-          onPress: () => {
-            earnTokens(5);
-            Alert.alert('Success', `You joined the ${challenge.title} challenge!`);
+          onPress: async () => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                Alert.alert('Error', 'Please log in to join challenges');
+                return;
+              }
+
+              // Add to database
+              const { error } = await supabase
+                .from('user_challenges')
+                .insert({
+                  user_id: user.id,
+                  challenge_id: challenge.id,
+                  status: 'active',
+                  current_progress: 0,
+                });
+
+              if (error) {
+                console.error('Error joining challenge:', error);
+              }
+
+              // Update local state
+              setJoinedChallenges([...joinedChallenges, challenge.id]);
+              earnTokens(5);
+              Alert.alert('Success', `You joined the ${challenge.title} challenge!`);
+            } catch (error) {
+              console.error('Error joining challenge:', error);
+              Alert.alert('Error', 'Failed to join challenge');
+            }
           }
         }
       ]
     );
   };
 
+  const handleShareChallenge = async (challenge) => {
+    try {
+      const result = await Share.share({
+        message: `Join me in the "${challenge.title}" challenge on Aether! ${challenge.description} 🌍`,
+        title: challenge.title,
+      });
+      
+      if (result.action === Share.sharedAction) {
+        earnTokens(2);
+        Alert.alert('Thanks for sharing!', 'You earned 2 tokens!');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  const handleViewDetails = (challenge) => {
+    Alert.alert(
+      challenge.title,
+      `${challenge.description}\n\nReward: ${challenge.rewardTokens} tokens\nParticipants: ${challenge.participantCount}`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const filteredChallenges = () => {
+    switch (activeTab) {
+      case 'joined':
+        return challenges.filter(c => joinedChallenges.includes(c.id));
+      case 'completed':
+        return challenges.filter(c => 
+          joinedChallenges.includes(c.id) && 
+          c.currentProgress >= c.targetValue
+        );
+      default:
+        return challenges;
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor="transparent" translucent />
       
-      {/* Add the same overlay effect as HomeScreen - only if dark mode is active */}
       {isDarkMode && (
         <>
           <ImageBackground 
@@ -91,38 +252,108 @@ export default function ChallengesScreen() {
         </>
       )}
 
-      <Text style={[styles.title, { color: theme.primaryText }]}>Active Challenges</Text>
-      <FlatList
-        data={challenges}
-        keyExtractor={(item) => item.id.toString()}
-        showsVerticalScrollIndicator={true}
-        indicatorStyle={isDarkMode ? "white" : "black"}
-        scrollIndicatorInsets={{ right: 1 }}
-        renderItem={({ item }) => (
-          <TouchableOpacity 
-            style={[
-              styles.challengeCard, 
-              { 
-                backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground,
-                borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
-                shadowColor: isDarkMode ? 'transparent' : '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isDarkMode ? 0 : 0.1,
-                shadowRadius: 3,
-                elevation: isDarkMode ? 0 : 3,
-              }
-            ]}
-            onPress={() => joinChallenge(item)}
-          >
-            <Text style={styles.emoji}>{item.emoji}</Text>
-            <View style={styles.textContainer}>
-              <Text style={[styles.challengeTitle, { color: theme.primaryText }]}>{item.title}</Text>
-              <Text style={[styles.description, { color: theme.secondaryText }]}>{item.description}</Text>
-              <Text style={[styles.reward, { color: theme.accentText }]}>🏆 {item.reward} tokens</Text>
-            </View>
-          </TouchableOpacity>
+      <ScrollView 
+        style={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: theme.primaryText }]}>Challenges</Text>
+          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
+            Complete challenges to earn rewards and reduce your carbon footprint
+          </Text>
+        </View>
+
+        {/* Share Button */}
+        <View style={styles.shareContainer}>
+          <ShareButton
+            title="Share Your Progress"
+            message="I'm taking on carbon reduction challenges with Aether!"
+            type="challenge"
+            variant="primary"
+            size="medium"
+            onShareComplete={() => earnTokens(3)}
+          />
+        </View>
+
+        {/* Tab Selector */}
+        <View style={styles.tabContainer}>
+          {['all', 'joined', 'completed'].map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.tab,
+                {
+                  backgroundColor: activeTab === tab ? theme.accentText : 'transparent',
+                  borderColor: theme.accentText,
+                  borderWidth: activeTab === tab ? 0 : 1,
+                }
+              ]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  { 
+                    color: activeTab === tab ? '#FFFFFF' : theme.accentText,
+                    fontWeight: activeTab === tab ? 'bold' : 'normal'
+                  }
+                ]}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Stats Overview */}
+        <View style={styles.statsContainer}>
+          <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>{joinedChallenges.length}</Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Active</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>
+              {challenges.filter(c => joinedChallenges.includes(c.id) && c.currentProgress >= c.targetValue).length}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Completed</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
+            <Text style={[styles.statValue, { color: theme.accentText }]}>
+              {challenges.reduce((sum, c) => joinedChallenges.includes(c.id) ? sum + c.rewardTokens : sum, 0)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Potential Tokens</Text>
+          </View>
+        </View>
+
+        {/* Challenges List */}
+        <View style={styles.challengesList}>
+          {filteredChallenges().map((challenge) => (
+            <ChallengeCard
+              key={challenge.id}
+              challenge={challenge}
+              isJoined={joinedChallenges.includes(challenge.id)}
+              onJoin={() => handleJoinChallenge(challenge)}
+              onShare={() => handleShareChallenge(challenge)}
+              onViewDetails={() => handleViewDetails(challenge)}
+            />
+          ))}
+        </View>
+
+        {filteredChallenges().length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={64} color={theme.secondaryText} />
+            <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+              {activeTab === 'joined' 
+                ? "You haven't joined any challenges yet"
+                : activeTab === 'completed'
+                ? "No completed challenges yet"
+                : "No challenges available"}
+            </Text>
+          </View>
         )}
-      />
+      </ScrollView>
     </View>
   );
 }
@@ -130,39 +361,78 @@ export default function ChallengesScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    paddingTop: 60 
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 60,
+    paddingBottom: 100,
+  },
+  header: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
   title: { 
     fontSize: 28, 
-    fontWeight: 'bold', 
-    padding: 20 
+    fontWeight: 'bold',
   },
-  challengeCard: {
+  subtitle: {
+    fontSize: 16,
+    marginTop: 5,
+  },
+  shareContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  tabContainer: {
     flexDirection: 'row',
-    marginHorizontal: 15,
-    marginVertical: 8,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  tabText: {
+    fontSize: 14,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
     padding: 15,
     borderRadius: 12,
+    marginHorizontal: 5,
+    alignItems: 'center',
     borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  emoji: { 
-    fontSize: 40, 
-    marginRight: 15 
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
   },
-  textContainer: { 
-    flex: 1 
+  statLabel: {
+    fontSize: 12,
+    marginTop: 5,
   },
-  challengeTitle: { 
-    fontSize: 18, 
-    fontWeight: '600' 
+  challengesList: {
+    paddingBottom: 20,
   },
-  description: { 
-    fontSize: 14, 
-    marginTop: 5 
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
-  reward: { 
-    fontSize: 12, 
-    marginTop: 5, 
-    fontWeight: '500' 
+  emptyText: {
+    fontSize: 16,
+    marginTop: 20,
+    textAlign: 'center',
   },
 });

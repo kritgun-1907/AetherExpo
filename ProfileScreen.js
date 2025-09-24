@@ -11,9 +11,12 @@ import {
   Switch,
   Modal,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase, signOut } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import { useCarbonStore } from './src/store/carbonStore'; // Add this import
+import FriendsList from './src/components/social/FriendsList'; 
+
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
@@ -31,6 +34,7 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
   const [achievements, setAchievements] = useState(0);
   const [isPremium, setIsPremium] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false); // Add premium modal state
+  const [friendsModalVisible, setFriendsModalVisible] = useState(false);
   
   // Settings state
   const [pushNotifications, setPushNotifications] = useState(true);
@@ -421,6 +425,22 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
           )}
         </View>
 
+        {/* Friends & Social Button */}
+<TouchableOpacity 
+  style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(139, 92, 246, 0.8)' : '#8B5CF6' }]} 
+  onPress={() => setFriendsModalVisible(true)}
+>
+  <Text style={styles.featureIcon}>👥</Text>
+  <View style={styles.featureTextContainer}>
+    <Text style={[styles.featureTitle, { color: theme.buttonText }]}>Friends & Social</Text>
+    <Text style={[styles.featureSubtitle, { color: theme.buttonText, opacity: 0.9 }]}>
+      Connect with friends and compare progress
+    </Text>
+  </View>
+  <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
+</TouchableOpacity>
+
+
         {/* Settings Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>Settings</Text>
@@ -544,6 +564,36 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
           </View>
         </View>
       </Modal>
+      {/* Friends List Modal */}
+<Modal
+  animationType="slide"
+  transparent={false}
+  visible={friendsModalVisible}
+  onRequestClose={() => setFriendsModalVisible(false)}
+>
+  <View style={[styles.modalFullScreen, { backgroundColor: theme.background }]}>
+    <View style={styles.modalNavHeader}>
+      <TouchableOpacity
+        onPress={() => setFriendsModalVisible(false)}
+        style={styles.modalBackButton}
+      >
+        <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
+      </TouchableOpacity>
+      <Text style={[styles.modalNavTitle, { color: theme.primaryText }]}>
+        Friends & Social
+      </Text>
+      <View style={{ width: 24 }} />
+    </View>
+    
+    <FriendsList 
+      onFriendSelect={(friend) => {
+        console.log('Friend selected:', friend);
+        // You can add navigation to friend's profile here
+        Alert.alert('Friend Profile', `${friend.full_name}'s profile`);
+      }}
+    />
+  </View>
+</Modal>
     </View>
   );
 }
@@ -819,6 +869,27 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     lineHeight: 22,
   },
+
+  modalFullScreen: {
+  flex: 1,
+},
+modalNavHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  paddingHorizontal: 20,
+  paddingTop: 60,
+  paddingBottom: 20,
+  borderBottomWidth: 1,
+  borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+},
+modalBackButton: {
+  padding: 5,
+},
+modalNavTitle: {
+  fontSize: 18,
+  fontWeight: '600',
+},
 
   // Premium Plans
   plansContainer: {

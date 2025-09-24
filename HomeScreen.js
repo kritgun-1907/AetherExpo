@@ -372,11 +372,13 @@ export default function HomeScreen() {
             .eq('user_id', user.id)
             .gte('created_at', day.toISOString())
             .lt('created_at', nextDay.toISOString());
+
+            console.log(`Emissions for ${day.toISOString().split('T')[0]}:`, dayEmissions);
           
           const dayTotal = dayEmissions?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
           weekData.push(dayTotal);
         }
-        
+        console.log('Weekly chart data loaded:', weekData);
         setWeeklyData(weekData);
       }
     } catch (error) {
