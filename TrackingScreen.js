@@ -1,5 +1,6 @@
 // TrackingScreen.js - COMPLETE VERSION WITH ALL CATEGORIES
 import React, { useState } from 'react';
+import ActivityTracker from './src/components/carbon/ActivityTracker';
 import {
   View,
   Text,
@@ -57,6 +58,13 @@ export default function TrackingScreen() {
   // Shopping state
   const [itemType, setItemType] = useState('clothing');
   const [itemCount, setItemCount] = useState('1');
+  
+  const handleActivityAdded = (activityData) => {
+  console.log('Activity added via ActivityTracker:', activityData);
+  if (storeAddEmission) {
+    storeAddEmission(activityData.carbon_kg, activityData.category);
+  }
+};
 
   const calculateEmissions = () => {
     let emissions = 0;
@@ -381,6 +389,11 @@ export default function TrackingScreen() {
             The average person produces about 4 tons of CO₂ per year. 
             Small changes in daily habits can significantly reduce your carbon footprint!
           </Text>
+        </View>
+        {/* ActivityTracker Integration */}
+        <View style={[dynamicStyles.form]}>
+          <Text style={[styles.formTitle, { color: theme.primaryText }]}>Advanced Activity Tracker</Text>
+          <ActivityTracker onActivityAdded={handleActivityAdded} />
         </View>
       </ScrollView>
     </View>
