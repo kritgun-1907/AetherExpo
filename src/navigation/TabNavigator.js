@@ -3,6 +3,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useTheme } from '../context/ThemeContext';
 
 // Import screens - CORRECTED PATHS
 import HomeScreen from '../../HomeScreen'; // Go up 2 levels to root
@@ -58,6 +59,7 @@ const ProfileStack = () => {
 };
 
 const TabNavigator = () => {
+  const { theme } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{

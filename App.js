@@ -12,9 +12,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
-//navigation
-import AppNavigator from './src/navigation/AppNavigator';
-import TabNavigator from './src/navigation/TabNavigator'; 
+// Import navigators
+import TabNavigator from './src/navigation/TabNavigator';
 
 // Import ALL screens including onboarding
 import LoginScreen from './LoginScreen';
@@ -116,7 +115,7 @@ function MainTabs() {
 function MainStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen 
         name="GiftVoucher" 
         component={GiftVoucherScreen}
@@ -133,6 +132,14 @@ function MainStackNavigator() {
           headerShown: true,
           title: 'Carbon Offsets',
           headerBackTitleVisible: false,
+        }}
+      />
+       <Stack.Screen
+        name="PaymentScreen"
+        component={PaymentScreen}
+        options={{
+          presentation: 'modal', // Makes it slide up from the bottom
+          headerShown: false, // Hiding this to use the header in PaymentScreen.js
         }}
       />
     </Stack.Navigator>
