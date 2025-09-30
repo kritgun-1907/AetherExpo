@@ -1,15 +1,15 @@
-// src/navigation/TabNavigator.js - UPDATED VERSION
+// src/navigation/TabNavigator.js - FIXED VERSION
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// Import screens
-import HomeScreen from '../screens/main/HomeScreen';
-import TrackingScreen from '../screens/main/TrackingScreen';
-import LeaderboardScreen from '../screens/main/LeaderboardScreen';
-import ChallengesScreen from '../screens/main/ChallengesScreen';
-import ProfileScreen from '../screens/main/ProfileScreen';
+// Import screens - CORRECTED PATHS
+import HomeScreen from '../../HomeScreen'; // Go up 2 levels to root
+import TrackingScreen from '../../TrackingScreen'; // Go up 2 levels to root
+import LeaderboardScreen from '../screens/main/LeaderboardScreen'; // Go up 1, then into screens/main
+import ChallengesScreen from '../screens/main/ChallengesScreen'; // Go up 1, then into screens/main
+import ProfileScreen from '../../ProfileScreen'; // Go up 2 levels to root
 import PaymentScreen from '../screens/main/PaymentScreen';
 import GiftVoucherScreen from '../screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from '../screens/main/CarbonOffsetScreen';
@@ -119,7 +119,7 @@ const TabNavigator = () => {
       
       <Tab.Screen
         name="Profile"
-        component={ProfileStack} // Use the stack navigator instead
+        component={ProfileStack}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Icon name="account" color={color} size={size} />
