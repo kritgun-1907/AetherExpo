@@ -12,6 +12,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
+//navigation
+import AppNavigator from './src/navigation/AppNavigator';
+import TabNavigator from './src/navigation/TabNavigator'; 
+
 // Import ALL screens including onboarding
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
@@ -30,6 +34,7 @@ import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
 import ChallengesScreen from './src/screens/main/ChallengesScreen';
 import GiftVoucherScreen from './src/screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from './src/screens/main/CarbonOffsetScreen';
+import PaymentScreen from './src/screens/main/PaymentScreen';
 
 // Import Supabase
 import { supabase } from './src/api/supabase';
@@ -63,7 +68,7 @@ function AuthStack() {
   );
 }
 
-// Main Tab Navigator
+// In App.js, make sure MainTabs is rendered correctly
 function MainTabs() {
   const { theme, isDarkMode } = useTheme();
   
@@ -72,7 +77,6 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Track') {
@@ -84,7 +88,6 @@ function MainTabs() {
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
-
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: theme.tabBarActive,

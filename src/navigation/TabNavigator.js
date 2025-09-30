@@ -1,5 +1,7 @@
+// src/navigation/TabNavigator.js - UPDATED VERSION
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Import screens
@@ -8,8 +10,52 @@ import TrackingScreen from '../screens/main/TrackingScreen';
 import LeaderboardScreen from '../screens/main/LeaderboardScreen';
 import ChallengesScreen from '../screens/main/ChallengesScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
+import PaymentScreen from '../screens/main/PaymentScreen';
+import GiftVoucherScreen from '../screens/main/GiftVoucherScreen';
+import CarbonOffsetScreen from '../screens/main/CarbonOffsetScreen';
 
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+// Create a stack navigator for Profile and related screens
+const ProfileStack = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen 
+        name="PaymentScreen" 
+        component={PaymentScreen}
+        options={{
+          headerShown: true,
+          title: 'Payment',
+          headerStyle: {
+            backgroundColor: '#10B981',
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <Stack.Screen 
+        name="GiftVoucher" 
+        component={GiftVoucherScreen}
+        options={{
+          headerShown: true,
+          title: 'Gift Vouchers',
+        }}
+      />
+      <Stack.Screen 
+        name="CarbonOffset" 
+        component={CarbonOffsetScreen}
+        options={{
+          headerShown: true,
+          title: 'Carbon Offsets',
+        }}
+      />
+    </Stack.Navigator>
+  );
+};
 
 const TabNavigator = () => {
   return (
@@ -73,7 +119,7 @@ const TabNavigator = () => {
       
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileStack} // Use the stack navigator instead
         options={{
           tabBarIcon: ({ color, size }) => (
             <Icon name="account" color={color} size={size} />

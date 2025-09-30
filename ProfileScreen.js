@@ -190,24 +190,78 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
   };
 
   // Add premium upgrade handler
-  const handlePremiumUpgrade = (plan) => {
-    Alert.alert(
-      'Upgrade to Premium',
-      `You selected the ${plan} plan. This would normally redirect to payment processing.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Continue', 
-          onPress: () => {
-            // Here you would integrate with your payment processor
-            // For now, just close the modal
-            setPremiumModalVisible(false);
-            Alert.alert('Success', 'Premium upgrade feature coming soon!');
-          }
-        }
+// Add this updated handlePremiumUpgrade function to your ProfileScreen.js
+
+const handlePremiumUpgrade = (plan) => {
+  const planDetails = {
+    basic: { 
+      price: 4.99, 
+      name: 'Basic', 
+      features: [
+        'Unlimited bank connections',
+        'Advanced analytics',
+        'Monthly offset recommendations',
+        'Basic gift vouchers',
+        'Email support'
       ]
-    );
+    },
+    premium: { 
+      price: 9.99, 
+      name: 'Premium', 
+      features: [
+        'All Basic features',
+        'Real-time carbon tracking',
+        'Premium gift vouchers',
+        'Custom offset portfolios',
+        'Carbon impact reports',
+        'Unlimited friends',
+        'Priority support',
+        'Early access to features'
+      ]
+    },
+    enterprise: { 
+      price: 19.99, 
+      name: 'Enterprise',
+      features: [
+        'All Premium features',
+        'Team tracking (50 users)',
+        'Corporate offset programs',
+        'API access',
+        'Custom branding',
+        'Dedicated account manager',
+        '24/7 priority support'
+      ]
+    }
   };
+
+  const selectedPlan = planDetails[plan.toLowerCase()]; // Ensure lowercase
+  
+  if (!selectedPlan) {
+    Alert.alert('Error', 'Invalid plan selected');
+    return;
+  }
+  
+  Alert.alert(
+    `Upgrade to ${selectedPlan.name}`,
+    `Start your 7-day free trial, then $${selectedPlan.price}/month.\n\nYou'll get:\n${selectedPlan.features.map(f => `• ${f}`).join('\n')}`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Continue to Payment', 
+        onPress: () => {
+          setPremiumModalVisible(false);
+          // Navigate to payment screen with correct parameters
+          navigation.navigate('PaymentScreen', { 
+            plan: plan.toLowerCase(), // Ensure lowercase
+            price: selectedPlan.price,
+            planName: selectedPlan.name
+          });
+        }
+      }
+    ]
+  );
+};
+
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -482,88 +536,250 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
       </ScrollView>
 
       {/* Premium Subscription Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={premiumModalVisible}
-        onRequestClose={togglePremiumModal}
+   {/* Premium Subscription Modal - UPDATED */}
+<Modal
+  animationType="slide"
+  transparent={true}
+  visible={premiumModalVisible}
+  onRequestClose={togglePremiumModal}
+>
+  <View style={styles.modalOverlay}>
+    <View style={[styles.modalContent, {
+      backgroundColor: theme.cardBackground,
+      borderColor: isDarkMode ? theme.border : 'transparent',
+    }]}>
+      <View style={styles.modalHeader}>
+        <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
+          👑 Upgrade to Premium
+        </Text>
+        <TouchableOpacity onPress={togglePremiumModal} style={styles.closeButton}>
+          <Text style={[styles.closeButtonText, { color: theme.secondaryText }]}>✕</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <Text style={[styles.modalSubtitle, { color: theme.secondaryText }]}>
+        Unlock advanced features and maximize your carbon impact
+      </Text>
+
+      {/* Premium Plans */}
+      <ScrollView 
+        style={styles.plansScrollContainer}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {
-            backgroundColor: theme.cardBackground,
-            borderColor: isDarkMode ? theme.border : 'transparent',
-          }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
-                👑 Upgrade to Premium
-              </Text>
-              <TouchableOpacity onPress={togglePremiumModal} style={styles.closeButton}>
-                <Text style={[styles.closeButtonText, { color: theme.secondaryText }]}>✕</Text>
-              </TouchableOpacity>
+        {/* Basic Plan */}
+        <TouchableOpacity 
+          style={[styles.planCard, {
+            backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
+            borderColor: isDarkMode ? 'rgba(59, 130, 246, 0.3)' : '#3B82F6',
+          }]}
+          onPress={() => handlePremiumUpgrade('basic')}
+        >
+          <View style={styles.planHeader}>
+            <Text style={[styles.planName, { color: theme.primaryText }]}>Basic</Text>
+            <View style={[styles.planPriceBadge, { backgroundColor: '#3B82F6' }]}>
+              <Text style={styles.planPriceText}>$4.99</Text>
+              <Text style={styles.planPeriodText}>/month</Text>
             </View>
-            
-            <Text style={[styles.modalSubtitle, { color: theme.secondaryText }]}>
-              Unlock advanced features and maximize your carbon impact
-            </Text>
-
-            {/* Premium Plans */}
-            <View style={styles.plansContainer}>
-              {/* Basic Plan */}
-              <TouchableOpacity 
-                style={[styles.planCard, {
-                  backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
-                  borderColor: isDarkMode ? 'rgba(59, 130, 246, 0.3)' : '#3B82F6',
-                }]}
-                onPress={() => handlePremiumUpgrade('Basic')}
-              >
-                <Text style={[styles.planName, { color: theme.primaryText }]}>Basic</Text>
-                <Text style={[styles.planPrice, { color: theme.accentText }]}>$4.99/month</Text>
-                <View style={styles.planFeatures}>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Unlimited bank connections</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Advanced analytics</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Monthly offset recommendations</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Basic gift vouchers</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Premium Plan */}
-              <TouchableOpacity 
-                style={[styles.planCard, styles.premiumPlan, {
-                  backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.3)' : '#F3E8FF',
-                  borderColor: isDarkMode ? 'rgba(147, 51, 234, 0.4)' : '#7C3AED',
-                }]}
-                onPress={() => handlePremiumUpgrade('Premium')}
-              >
-                <View style={styles.popularBadge}>
-                  <Text style={styles.popularText}>MOST POPULAR</Text>
-                </View>
-                <Text style={[styles.planName, { color: theme.primaryText }]}>Premium</Text>
-                <Text style={[styles.planPrice, { color: theme.accentText }]}>$9.99/month</Text>
-                <View style={styles.planFeatures}>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• All Basic features</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Real-time carbon tracking</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Premium gift vouchers</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Custom offset portfolios</Text>
-                  <Text style={[styles.planFeature, { color: theme.secondaryText }]}>• Carbon impact reports</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.upgradeButton, { backgroundColor: theme.accentText }]}
-              onPress={() => handlePremiumUpgrade('Premium')}
-            >
-              <Text style={[styles.upgradeButtonText, { color: theme.buttonText }]}>
-                Start Free Trial
-              </Text>
-            </TouchableOpacity>
-
-            <Text style={[styles.trialText, { color: theme.secondaryText }]}>
-              7-day free trial, cancel anytime
-            </Text>
           </View>
-        </View>
-      </Modal>
+          
+          <View style={styles.planFeatures}>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Unlimited bank connections
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Advanced analytics dashboard
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Monthly offset recommendations
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Basic gift vouchers ($5-$25)
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Email support
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.planBenefitBadge}>
+            <Text style={styles.planBenefitText}>💰 Save $5/month vs Free</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Premium Plan - Most Popular */}
+        <TouchableOpacity 
+          style={[styles.planCard, styles.premiumPlan, {
+            backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.3)' : '#F3E8FF',
+            borderColor: isDarkMode ? 'rgba(147, 51, 234, 0.4)' : '#7C3AED',
+          }]}
+          onPress={() => handlePremiumUpgrade('premium')}
+        >
+          <View style={styles.popularBadge}>
+            <Text style={styles.popularText}>⭐ MOST POPULAR</Text>
+          </View>
+          
+          <View style={styles.planHeader}>
+            <Text style={[styles.planName, { color: theme.primaryText }]}>Premium</Text>
+            <View style={[styles.planPriceBadge, { backgroundColor: '#7C3AED' }]}>
+              <Text style={styles.planPriceText}>$9.99</Text>
+              <Text style={styles.planPeriodText}>/month</Text>
+            </View>
+          </View>
+          
+          <View style={styles.planFeatures}>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                <Text style={{ fontWeight: 'bold' }}>All Basic features</Text>
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Real-time carbon tracking
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Premium gift vouchers (up to $100)
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Custom offset portfolios
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Detailed carbon impact reports
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Unlimited friend connections
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Priority email & chat support
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Early access to new features
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.planBenefitBadge}>
+            <Text style={styles.planBenefitText}>🎁 Best Value - Save $20/year</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Enterprise Plan */}
+        <TouchableOpacity 
+          style={[styles.planCard, {
+            backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
+            borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#10B981',
+          }]}
+          onPress={() => handlePremiumUpgrade('enterprise')}
+        >
+          <View style={styles.planHeader}>
+            <Text style={[styles.planName, { color: theme.primaryText }]}>Enterprise</Text>
+            <View style={[styles.planPriceBadge, { backgroundColor: '#10B981' }]}>
+              <Text style={styles.planPriceText}>$19.99</Text>
+              <Text style={styles.planPeriodText}>/month</Text>
+            </View>
+          </View>
+          
+          <View style={styles.planFeatures}>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                <Text style={{ fontWeight: 'bold' }}>All Premium features</Text>
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Team carbon tracking (up to 50 users)
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Corporate offset programs
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                API access for integrations
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Custom branding options
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                Dedicated account manager
+              </Text>
+            </View>
+            <View style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                24/7 priority support
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.planBenefitBadge}>
+            <Text style={styles.planBenefitText}>🏢 Perfect for businesses</Text>
+          </View>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Call to Action Button */}
+      <TouchableOpacity
+        style={[styles.upgradeButton, { backgroundColor: theme.accentText }]}
+        onPress={() => handlePremiumUpgrade('premium')}
+      >
+        <Text style={[styles.upgradeButtonText, { color: theme.buttonText }]}>
+          Start 7-Day Free Trial
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.trialText, { color: theme.secondaryText }]}>
+        No credit card required • Cancel anytime
+      </Text>
+    </View>
+  </View>
+</Modal>
+
       {/* Friends List Modal */}
 <Modal
   animationType="slide"

@@ -1,3 +1,4 @@
+// src/components/social/FriendsList.js - COMPLETE FIXED VERSION
 import React, { useState } from 'react';
 import {
   View,
@@ -465,7 +466,7 @@ export default function FriendsList({ onFriendSelect }) {
         </View>
         
         <View style={styles.headerButtons}>
-          {/* Add Friend by Email Button */}
+          {/* Add Friend by Email Button - THIS IS THE KEY BUTTON */}
           <TouchableOpacity
             onPress={() => setAddFriendModalVisible(true)}
             style={[styles.addFriendButton, { backgroundColor: Colors.primary || '#10B981' }]}
@@ -548,7 +549,7 @@ export default function FriendsList({ onFriendSelect }) {
         )}
       </View>
 
-      {/* Add Friend by Email Modal */}
+      {/* Add Friend by Email Modal - THIS IS THE KEY MODAL */}
       <Modal
         visible={addFriendModalVisible}
         animationType="slide"
@@ -803,8 +804,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing?.md || 16,
-    paddingVertical: Spacing?.md || 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderBottomWidth: 1,
   },
   headerContent: {
@@ -813,8 +814,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    ...Typography?.h5 || { fontSize: 20, fontWeight: 'bold' },
-    fontWeight: FontWeight?.semiBold || 'bold',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   friendLimitBadge: {
     flexDirection: 'row',
@@ -836,9 +837,388 @@ const styles = StyleSheet.create({
   addFriendButton: {
     width: 40,
     height: 40,
-    borderRadius: BorderRadius?.full || 20,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
-  }
+  },
+  searchButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  content: {
+    flex: 1,
+  },
+  friendCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  friendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  friendInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  friendName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  friendStatus: {
+    fontSize: 14,
+  },
+  removeButton: {
+    padding: 8,
+  },
+  friendStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statText: {
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  requestCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  requestInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  requestTime: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  acceptButton: {
+    flexDirection: 'row',
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  declineButton: {
+    flexDirection: 'row',
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  searchCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  searchStats: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  addButton: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  
+  // Add Friend Modal Styles - THESE ARE CRITICAL
+  addFriendModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  addFriendModalContent: {
+    borderRadius: 20,
+    padding: 25,
+    width: '90%',
+    maxWidth: 400,
+    borderWidth: 1,
+  },
+  addFriendModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  addFriendModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  addFriendInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addFriendInput: {
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+  },
+  addFriendHint: {
+    fontSize: 12,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  sendRequestButton: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendRequestButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  
+  // Search Modal Styles
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  modalCloseButton: {
+    padding: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  searchTypeContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  searchTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  searchTypeText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  searchInput: {
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  searchLoader: {
+    position: 'absolute',
+    right: 30,
+    top: 12,
+  },
+  searchResults: {
+    paddingBottom: 20,
+  },
+  
+  // Premium Modal Styles
+  premiumModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  premiumModalContent: {
+    borderRadius: 20,
+    padding: 25,
+    width: '90%',
+    maxWidth: 400,
+    borderWidth: 1,
+  },
+  premiumModalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  premiumModalEmoji: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  premiumModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  premiumCloseButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    padding: 5,
+  },
+  premiumModalText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  premiumFeatures: {
+    marginBottom: 20,
+  },
+  premiumFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  premiumFeatureText: {
+    fontSize: 14,
+    marginLeft: 12,
+  },
+  premiumUpgradeButton: {
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  premiumUpgradeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  premiumLaterButton: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  premiumLaterButtonText: {
+    fontSize: 14,
+  },
 });
