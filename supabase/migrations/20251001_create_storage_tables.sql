@@ -1,7 +1,28 @@
 -- =====================================================
--- STORAGE RELATED TABLES FOR AETHER APP
--- Migration: 20250926_create_storage_tables.sql
+-- STORAGE RELATED TABLES FOR AETHER APP (FIXED)
+-- Migration: 20251001_create_storage_tables_fixed.sql
 -- =====================================================
+
+-- First, let's check the challenges table structure and fix it if needed
+DO $$ 
+BEGIN
+    -- Check if challenges table exists and what type its id column is
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'challenges'
+    ) THEN
+        -- Check if id is TEXT and convert to UUID if needed
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'challenges' 
+            AND column_name = 'id' 
+            AND data_type = 'text'
+        ) THEN
+            RAISE NOTICE 'Challenges table id is TEXT, will handle appropriately';
+        END IF;
+    END IF;
+END $$;
 
 -- 1. User Receipts Table (for carbon tracking from purchases)
 CREATE TABLE IF NOT EXISTS public.user_receipts (
@@ -20,10 +41,11 @@ CREATE TABLE IF NOT EXISTS public.user_receipts (
 );
 
 -- 2. Challenge Submissions Table (for challenge proof uploads)
+-- Using TEXT for challenge_id to match the challenges table
 CREATE TABLE IF NOT EXISTS public.challenge_submissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.user_profiles(id) ON DELETE CASCADE,
-    challenge_id UUID REFERENCES public.challenges(id) ON DELETE CASCADE,
+    challenge_id TEXT, -- Changed from UUID to TEXT to match challenges table
     storage_path TEXT,
     submission_type TEXT CHECK (submission_type IN ('photo', 'video', 'document', 'text')),
     submission_text TEXT,
@@ -35,6 +57,26 @@ CREATE TABLE IF NOT EXISTS public.challenge_submissions (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add foreign key constraint only if challenges table exists
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'challenges'
+    ) THEN
+        -- Add the foreign key constraint
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'challenge_submissions_challenge_id_fkey'
+            AND table_name = 'challenge_submissions'
+        ) THEN
+            ALTER TABLE public.challenge_submissions
+            ADD CONSTRAINT challenge_submissions_challenge_id_fkey
+            FOREIGN KEY (challenge_id) REFERENCES public.challenges(id) ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
 
 -- 3. User Media Table (general media storage tracking)
 CREATE TABLE IF NOT EXISTS public.user_media (
@@ -103,6 +145,24 @@ ALTER TABLE public.challenge_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_storage_stats ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own receipts" ON public.user_receipts;
+DROP POLICY IF EXISTS "Users can insert own receipts" ON public.user_receipts;
+DROP POLICY IF EXISTS "Users can update own receipts" ON public.user_receipts;
+DROP POLICY IF EXISTS "Users can delete own receipts" ON public.user_receipts;
+
+DROP POLICY IF EXISTS "Users can view own submissions" ON public.challenge_submissions;
+DROP POLICY IF EXISTS "Users can insert own submissions" ON public.challenge_submissions;
+DROP POLICY IF EXISTS "Users can update own pending submissions" ON public.challenge_submissions;
+
+DROP POLICY IF EXISTS "Users can view own media" ON public.user_media;
+DROP POLICY IF EXISTS "Users can insert own media" ON public.user_media;
+DROP POLICY IF EXISTS "Users can update own media" ON public.user_media;
+DROP POLICY IF EXISTS "Users can delete own media" ON public.user_media;
+
+DROP POLICY IF EXISTS "Users can view own storage stats" ON public.user_storage_stats;
+DROP POLICY IF EXISTS "System can manage storage stats" ON public.user_storage_stats;
+
 -- User receipts policies
 CREATE POLICY "Users can view own receipts" ON public.user_receipts
     FOR SELECT USING (auth.uid() = user_id);
@@ -118,10 +178,14 @@ CREATE POLICY "Users can delete own receipts" ON public.user_receipts
 
 -- Challenge submissions policies
 CREATE POLICY "Users can view own submissions" ON public.challenge_submissions
-    FOR SELECT USING (auth.uid() = user_id OR EXISTS (
-        SELECT 1 FROM public.challenges 
-        WHERE id = challenge_id AND created_by = auth.uid()
-    ));
+    FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (EXISTS (
+            SELECT 1 FROM public.challenges 
+            WHERE challenges.id = challenge_submissions.challenge_id 
+            AND challenges.created_by = auth.uid()
+        ))
+    );
 
 CREATE POLICY "Users can insert own submissions" ON public.challenge_submissions
     FOR INSERT WITH CHECK (auth.uid() = user_id);
@@ -292,6 +356,11 @@ GRANT ALL ON public.user_receipts TO authenticated;
 GRANT ALL ON public.challenge_submissions TO authenticated;
 GRANT ALL ON public.user_media TO authenticated;
 GRANT ALL ON public.user_storage_stats TO authenticated;
+
+GRANT SELECT ON public.user_receipts TO anon;
+GRANT SELECT ON public.challenge_submissions TO anon;
+GRANT SELECT ON public.user_media TO anon;
+GRANT SELECT ON public.user_storage_stats TO anon;
 
 -- Grant execute permissions on functions
 GRANT EXECUTE ON FUNCTION public.update_storage_stats(UUID) TO authenticated;

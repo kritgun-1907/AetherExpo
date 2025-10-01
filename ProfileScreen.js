@@ -16,6 +16,9 @@ import { supabase, signOut } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import { useCarbonStore } from './src/store/carbonStore'; // Add this import
 import FriendsList from './src/components/social/FriendsList'; 
+import { useEmissions } from '../hooks/useEmissions';
+import AvatarUpload from './src/components/profile/AvatarUpload';
+
 
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
@@ -35,6 +38,7 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
   const [isPremium, setIsPremium] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false); // Add premium modal state
   const [friendsModalVisible, setFriendsModalVisible] = useState(false);
+  const [profile, setProfile] = useState(null);
   
   // Settings state
   const [pushNotifications, setPushNotifications] = useState(true);
@@ -51,6 +55,15 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUser(user);
+        const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (profileData) {
+        setProfile(profileData);
+      }
         console.log('Profile user data loaded:', user.email);
       }
     } catch (error) {
@@ -366,11 +379,13 @@ const handlePremiumUpgrade = (plan) => {
       >
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <View style={[dynamicStyles.avatar]}>
-              <Text style={[styles.avatarText, { color: theme.buttonText }]}>{getUserInitial()}</Text>
-            </View>
-          </View>
+         <AvatarUpload 
+          userId={user?.id}
+          currentAvatarUrl={profile?.avatar_url}
+          onAvatarUpdated={(newUrl) => {
+          setProfile(prev => ({ ...prev, avatar_url: newUrl }));
+             }}
+                  />
           <Text style={[styles.userName, { color: theme.primaryText }]}>{getUserName()}</Text>
           <Text style={[styles.userEmail, { color: theme.secondaryText }]}>{user?.email}</Text>
           <View style={[dynamicStyles.badgeContainer]}>

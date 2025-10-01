@@ -12,8 +12,9 @@ import {
   ScrollView,
   FlatList,
 } from 'react-native';
-import { supabase, addEmission, testDatabaseConnection, debugEmissionInsert,incrementEcoPoints  } from './src/api/supabase';
+import { supabase, addEmission, testDatabaseConnection, debugEmissionInsert, incrementEcoPoints } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
+import { useEmissions } from './src/hooks/useEmissions';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
@@ -31,30 +32,6 @@ const getUserProfile = async (userId) => {
   } catch (error) {
     console.error('Error loading user profile:', error);
     return { data: null, error };
-  }
-};
-
-const getDailyEmissions = async (userId) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    
-    const { data, error } = await supabase
-      .from('emissions')
-      .select('amount')
-      .eq('user_id', userId)
-      .gte('created_at', today.toISOString())
-      .lt('created_at', tomorrow.toISOString());
-
-    if (error) throw error;
-    
-    const total = data?.reduce((sum, emission) => sum + parseFloat(emission.amount), 0) || 0;
-    return { total, error: null };
-  } catch (error) {
-    console.error('Error loading daily emissions:', error);
-    return { total: 0, error };
   }
 };
 
@@ -91,7 +68,6 @@ const getUserAchievements = async (userId) => {
     return { achievements, error: null };
   } catch (error) {
     console.error('Error loading achievements:', error);
-    // Return fallback achievements if backend fails
     return { 
       achievements: [
         { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
@@ -99,57 +75,6 @@ const getUserAchievements = async (userId) => {
       ], 
       error 
     };
-  }
-};
-
-const getWeeklyEmissions = async (userId) => {
-  try {
-    const weekData = [];
-    const today = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const day = new Date();
-      day.setDate(today.getDate() - i);
-      day.setHours(0, 0, 0, 0);
-      
-      const nextDay = new Date(day);
-      nextDay.setDate(day.getDate() + 1);
-      
-      const { data: dayEmissions } = await supabase
-        .from('emissions')
-        .select('amount')
-        .eq('user_id', userId)
-        .gte('created_at', day.toISOString())
-        .lt('created_at', nextDay.toISOString());
-
-      const dayTotal = dayEmissions?.reduce((sum, emission) => sum + parseFloat(emission.amount), 0) || 0;
-      weekData.push(dayTotal);
-    }
-    
-    return { weekData, error: null };
-  } catch (error) {
-    console.error('Error loading weekly data:', error);
-    return { weekData: [0, 0, 0, 0, 0, 0, 0], error };
-  }
-};
-
-const updateUserEcoPoints = async (userId, pointsToAdd) => {
-  try {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update({ 
-        eco_points: supabase.raw(`eco_points + ${pointsToAdd}`),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select('eco_points')
-      .single();
-
-    if (error) throw error;
-    return { newPoints: data.eco_points, error: null };
-  } catch (error) {
-    console.error('Error updating eco points:', error);
-    return { newPoints: null, error };
   }
 };
 
@@ -163,22 +88,6 @@ const subscribeToUserUpdates = (userId, callback) => {
         schema: 'public',
         table: 'user_profiles',
         filter: `id=eq.${userId}`,
-      },
-      callback
-    )
-    .subscribe();
-};
-
-const subscribeToEmissionsUpdates = (userId, callback) => {
-  return supabase
-    .channel(`emissions_${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'emissions',
-        filter: `user_id=eq.${userId}`,
       },
       callback
     )
@@ -231,9 +140,8 @@ const AchievementBadge = ({ achievement, size = 'small', theme, isDarkMode }) =>
   </View>
 );
 
-const EmissionChart = ({ data, theme, isDarkMode }) => {
+const EmissionChart = ({ data, dayNames, theme, isDarkMode }) => {
   const maxValue = data ? Math.max(...data) : 10;
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const averageValue = data && data.length > 0 ? (data.reduce((a, b) => a + b, 0) / data.length) : 0;
   
   return (
@@ -273,7 +181,7 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
                 {value.toFixed(1)}
               </Text>
               <Text style={[styles.barLabel, { color: theme.secondaryText }]}>
-                {days[index]}
+                {dayNames ? dayNames[index] : 'Day'}
               </Text>
             </View>
           ))}
@@ -290,30 +198,24 @@ const EmissionChart = ({ data, theme, isDarkMode }) => {
 };
 
 export default function HomeScreen() {
-  // Theme hook
   const { theme, isDarkMode } = useTheme();
+  const { emissions, loadEmissions, subscribeToChanges } = useEmissions();
   
-  // Backend-connected state
   const [profile, setProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // User data state (all from backend)
   const [userName, setUserName] = useState('User');
-  const [dailyEmissions, setDailyEmissions] = useState(0);
   const [achievements, setAchievements] = useState([]);
   const [tokens, setTokens] = useState(0);
   const [streak, setStreak] = useState(0);
-  const [weeklyData, setWeeklyData] = useState([0, 0, 0, 0, 0, 0, 0]);
   
-  // Modal state
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [emissionAmount, setEmissionAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Emission categories
   const categories = [
     { id: 'transport', name: 'Transport', emoji: '🚗', factor: 0.21 },
     { id: 'food', name: 'Food', emoji: '🍽️', factor: 0.5 },
@@ -341,7 +243,15 @@ export default function HomeScreen() {
 
         console.log('Initializing HomeScreen for user:', user.id);
 
-        // Load or create user profile
+        // Load emissions using the shared hook
+        await loadEmissions(user.id);
+        
+        // Subscribe to emission changes using the shared hook
+        const emissionSubscription = subscribeToChanges(user.id);
+        if (emissionSubscription) {
+          subscriptions.push(emissionSubscription);
+        }
+
         let userProfile = await getUserProfile(user.id);
         
         if (!userProfile.data && mounted) {
@@ -377,28 +287,12 @@ export default function HomeScreen() {
           setStreak(userProfile.data.streak_count || 0);
         }
 
-        // Load all backend data in parallel
-        const [dailyResult, achievementsResult, weeklyResult] = await Promise.all([
-          getDailyEmissions(user.id),
-          getUserAchievements(user.id),
-          getWeeklyEmissions(user.id)
-        ]);
+        const achievementsResult = await getUserAchievements(user.id);
 
-        if (mounted) {
-          if (dailyResult.total !== undefined) {
-            setDailyEmissions(dailyResult.total);
-          }
-          
-          if (achievementsResult.achievements) {
-            setAchievements(achievementsResult.achievements);
-          }
-          
-          if (weeklyResult.weekData) {
-            setWeeklyData(weeklyResult.weekData);
-          }
+        if (mounted && achievementsResult.achievements) {
+          setAchievements(achievementsResult.achievements);
         }
 
-        // Set up real-time subscriptions
         const profileSubscription = subscribeToUserUpdates(user.id, (payload) => {
           if (mounted) {
             console.log('Profile updated:', payload);
@@ -407,14 +301,6 @@ export default function HomeScreen() {
               setTokens(payload.new.eco_points || 0);
               setStreak(payload.new.streak_count || 0);
             }
-          }
-        });
-
-        const emissionsSubscription = subscribeToEmissionsUpdates(user.id, (payload) => {
-          if (mounted) {
-            console.log('Emissions updated:', payload);
-            // Refresh daily emissions and weekly data
-            refreshData();
           }
         });
 
@@ -432,7 +318,7 @@ export default function HomeScreen() {
           }
         });
 
-        subscriptions.push(profileSubscription, emissionsSubscription, notificationSubscription);
+        subscriptions.push(profileSubscription, notificationSubscription);
         
         console.log('HomeScreen fully initialized with backend connections');
         
@@ -455,92 +341,60 @@ export default function HomeScreen() {
         }
       });
     };
-  }, []);
+  }, [loadEmissions, subscribeToChanges]);
 
-  // Refresh all data from backend
-  const refreshData = async () => {
+  const submitEmission = async () => {
+    if (!selectedCategory || !emissionAmount) {
+      Alert.alert('Error', 'Please select a category and enter an amount');
+      return;
+    }
+
+    const amount = parseFloat(emissionAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    setSubmitting(true);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-      const [dailyResult, weeklyResult] = await Promise.all([
-        getDailyEmissions(user.id),
-        getWeeklyEmissions(user.id)
-      ]);
+      const result = await addEmission(user.id, selectedCategory, amount);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to add emission');
+      }
 
-      if (dailyResult.total !== undefined) {
-        setDailyEmissions(dailyResult.total);
+      const pointsAwarded = await incrementEcoPoints(user.id, 5);
+      if (pointsAwarded) {
+        setTokens(pointsAwarded);
       }
       
-      if (weeklyResult.weekData) {
-        setWeeklyData(weeklyResult.weekData);
-      }
+      // The hook will automatically update emissions across both screens
+      await loadEmissions(user.id);
+      
+      setEmissionAmount('');
+      setSelectedCategory('');
+      setModalVisible(false);
+      
+      Alert.alert('Success! 🎉', 'Emission logged successfully!\n+5 eco points earned!');
+      
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      console.error('Error submitting emission:', error);
+      Alert.alert('Error', error.message || 'Failed to log emission. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
-
-  // Submit emission with full backend integration
-const submitEmission = async () => {
-  if (!selectedCategory || !emissionAmount) {
-    Alert.alert('Error', 'Please select a category and enter an amount');
-    return;
-  }
-
-  const amount = parseFloat(emissionAmount);
-  if (isNaN(amount) || amount <= 0) {
-    Alert.alert('Error', 'Please enter a valid amount');
-    return;
-  }
-
-  setSubmitting(true);
-  
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    // Use the improved addEmission function
-    const result = await addEmission(user.id, selectedCategory, amount);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to add emission');
-    }
-
-    // Award eco points
-    const pointsAwarded = await incrementEcoPoints(user.id, 5);
-    if (pointsAwarded) {
-      setTokens(pointsAwarded);
-    }
-    
-    // Update UI
-    setDailyEmissions(prev => prev + amount);
-    
-    // Refresh data
-    if (typeof refreshData === 'function') {
-      await refreshData();
-    }
-    
-    // Reset form
-    setEmissionAmount('');
-    setSelectedCategory('');
-    setModalVisible(false);
-    
-    Alert.alert('Success! 🎉', 'Emission logged successfully!\n+5 eco points earned!');
-    
-  } catch (error) {
-    console.error('Error submitting emission:', error);
-    Alert.alert('Error', error.message || 'Failed to log emission. Please try again.');
-  } finally {
-    setSubmitting(false);
-  }
-};
 
   const DAILY_GOAL = profile?.weekly_goal || 50;
 
   const getProgressColor = () => {
-    const percentage = (dailyEmissions / DAILY_GOAL) * 100;
+    const percentage = (emissions.daily / DAILY_GOAL) * 100;
     if (percentage < 60) return '#4ade80';
     if (percentage < 80) return '#facc15';
     return '#f87171';
@@ -625,8 +479,6 @@ const submitEmission = async () => {
         showsVerticalScrollIndicator={true}
         indicatorStyle={isDarkMode ? "white" : "black"}
         contentContainerStyle={styles.scrollContent}
-        onRefresh={refreshData}
-        refreshing={refreshing}
       >
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -643,7 +495,7 @@ const submitEmission = async () => {
         <View style={styles.statsRow}>
           <View style={[dynamicStyles.statCard]}>
             <Text style={[styles.statValue, { color: theme.accentText }]}>
-              {dailyEmissions.toFixed(1)}
+              {emissions.daily.toFixed(1)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
               kg CO₂ Today
@@ -684,7 +536,12 @@ const submitEmission = async () => {
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
             This Week's Emissions
           </Text>
-          <EmissionChart data={weeklyData} theme={theme} isDarkMode={isDarkMode} />
+          <EmissionChart 
+            data={emissions.weeklyData} 
+            dayNames={emissions.dayNames} 
+            theme={theme} 
+            isDarkMode={isDarkMode} 
+          />
         </View>
 
         <View style={[dynamicStyles.card]}>
@@ -697,19 +554,19 @@ const submitEmission = async () => {
                 style={[
                   styles.progressFill, 
                   { 
-                    width: `${Math.min((dailyEmissions / DAILY_GOAL) * 100, 100)}%`,
+                    width: `${Math.min((emissions.daily / DAILY_GOAL) * 100, 100)}%`,
                     backgroundColor: getProgressColor()
                   }
                 ]} 
               />
             </View>
             <Text style={[styles.goalText, { color: theme.secondaryText }]}>
-              {dailyEmissions.toFixed(1)} / {DAILY_GOAL}kg CO₂e ({Math.round((dailyEmissions / DAILY_GOAL) * 100)}%)
+              {emissions.daily.toFixed(1)} / {DAILY_GOAL}kg CO₂e ({Math.round((emissions.daily / DAILY_GOAL) * 100)}%)
             </Text>
             
             <Text style={[styles.goalHint, { color: theme.secondaryText, fontSize: 12, marginTop: 5 }]}>
-              {dailyEmissions < DAILY_GOAL * 0.6 ? '🌟 Great job! Keep it green!' :
-               dailyEmissions < DAILY_GOAL * 0.8 ? '⚠️ Getting close to your limit' :
+              {emissions.daily < DAILY_GOAL * 0.6 ? '🌟 Great job! Keep it green!' :
+               emissions.daily < DAILY_GOAL * 0.8 ? '⚠️ Getting close to your limit' :
                '🚨 Over your daily target'}
             </Text>
           </View>

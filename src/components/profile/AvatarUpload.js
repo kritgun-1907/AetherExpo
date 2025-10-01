@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import storageService from '../../services/storageService';
+import storageService from '../../services/StorageService';
 import { useTheme } from '../../context/ThemeContext';
 
 export default function AvatarUpload({ userId, currentAvatarUrl, onAvatarUpdated }) {

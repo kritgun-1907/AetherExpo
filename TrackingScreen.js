@@ -1,6 +1,7 @@
 // TrackingScreen.js - Updated with CarbonCalculator
 import React, { useState } from 'react';
 import ActivityTracker from './src/components/carbon/ActivityTracker';
+import { calculateRealEmissions } from './src/api/climatiq';
 import CarbonCalculator from './src/components/carbon/CarbonCalculator'; // NEW IMPORT
 import {
   View,
