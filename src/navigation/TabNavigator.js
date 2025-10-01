@@ -1,16 +1,16 @@
-// src/navigation/TabNavigator.js - FIXED VERSION
+// src/navigation/TabNavigator.js - FIXED WITH DARK THEME
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../context/ThemeContext';
 
-// Import screens - CORRECTED PATHS
-import HomeScreen from '../../HomeScreen'; // Go up 2 levels to root
-import TrackingScreen from '../../TrackingScreen'; // Go up 2 levels to root
-import LeaderboardScreen from '../screens/main/LeaderboardScreen'; // Go up 1, then into screens/main
-import ChallengesScreen from '../screens/main/ChallengesScreen'; // Go up 1, then into screens/main
-import ProfileScreen from '../../ProfileScreen'; // Go up 2 levels to root
+// Import screens
+import HomeScreen from '../../HomeScreen';
+import TrackingScreen from '../../TrackingScreen';
+import LeaderboardScreen from '../screens/main/LeaderboardScreen';
+import ChallengesScreen from '../screens/main/ChallengesScreen';
+import ProfileScreen from '../../ProfileScreen';
 import PaymentScreen from '../screens/main/PaymentScreen';
 import GiftVoucherScreen from '../screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from '../screens/main/CarbonOffsetScreen';
@@ -59,19 +59,25 @@ const ProfileStack = () => {
 };
 
 const TabNavigator = () => {
-  const { theme } = useTheme();
+  const { theme, isDarkMode } = useTheme();
+  
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#10B981',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarActiveTintColor: '#10B981', // Green active color
+        tabBarInactiveTintColor: isDarkMode ? '#9CA3AF' : '#6B7280', // Gray inactive
         tabBarStyle: {
-          backgroundColor: 'white',
+          backgroundColor: isDarkMode ? '#1F2937' : '#FFFFFF', // Dark gray background for dark mode
           borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
+          borderTopColor: isDarkMode ? '#374151' : '#E5E7EB',
           paddingBottom: 5,
           paddingTop: 5,
-          height: 60
+          height: 60,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.1,
+          shadowRadius: 3,
+          elevation: isDarkMode ? 8 : 5,
         }
       }}
     >

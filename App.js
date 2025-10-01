@@ -1,4 +1,4 @@
-// App.js - Updated with Onboarding Flow
+// App.js - Fixed with proper imports and network timeout handling
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -8,6 +8,8 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Font from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -38,6 +40,9 @@ import PaymentScreen from './src/screens/main/PaymentScreen';
 // Import Supabase
 import { supabase } from './src/api/supabase';
 
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
+
 const prefix = Linking.createURL('/');
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -64,50 +69,6 @@ function AuthStack() {
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     </Stack.Navigator>
-  );
-}
-
-// In App.js, make sure MainTabs is rendered correctly
-function MainTabs() {
-  const { theme, isDarkMode } = useTheme();
-  
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          if (route.name === 'Home') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Track') {
-            iconName = focused ? 'add-circle' : 'add-circle-outline';
-          } else if (route.name === 'Leaderboard') {
-            iconName = focused ? 'trophy' : 'trophy-outline';
-          } else if (route.name === 'Challenges') {
-            iconName = focused ? 'ribbon' : 'ribbon-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: theme.tabBarActive,
-        tabBarInactiveTintColor: theme.tabBarInactive,
-        tabBarStyle: {
-          backgroundColor: theme.tabBarBackground,
-          borderTopColor: theme.tabBarBorder,
-          borderTopWidth: 1,
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
-        },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Track" component={TrackingScreen} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
-      <Tab.Screen name="Challenges" component={ChallengesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-    </Tab.Navigator>
   );
 }
 
@@ -138,12 +99,26 @@ function MainStackNavigator() {
         name="PaymentScreen"
         component={PaymentScreen}
         options={{
-          presentation: 'modal', // Makes it slide up from the bottom
-          headerShown: false, // Hiding this to use the header in PaymentScreen.js
+          presentation: 'modal',
+          headerShown: false,
         }}
       />
     </Stack.Navigator>
   );
+}
+
+// Load fonts with error handling
+async function loadResourcesAsync() {
+  try {
+    await Font.loadAsync({
+      // Only load fonts if you're actually using custom fonts
+      // Otherwise, comment these out
+      // 'custom-font': require('./assets/fonts/custom-font.ttf'),
+    });
+  } catch (e) {
+    // We might want to provide this error information to an error reporting service
+    console.warn('Error loading fonts:', e);
+  }
 }
 
 // App Content Component
@@ -151,6 +126,7 @@ function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isFirstLaunch, setIsFirstLaunch] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingComplete, setLoadingComplete] = useState(false);
   const { theme } = useTheme();
 
   const linking = {
@@ -190,35 +166,72 @@ function AppContent() {
     },
   };
 
+  // Load resources on mount
+  useEffect(() => {
+    async function loadResources() {
+      try {
+        await loadResourcesAsync();
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setLoadingComplete(true);
+        SplashScreen.hideAsync();
+      }
+    }
+
+    loadResources();
+  }, []);
+
   useEffect(() => {
     checkFirstLaunch();
   }, []);
 
   const checkFirstLaunch = async () => {
     try {
-      // Check if this is the first launch
+      // Check AsyncStorage first (fast, no network required)
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
       const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
       
       if (hasLaunched === null) {
-        // First time launch
+        // First time launch - exit early without checking Supabase
         await AsyncStorage.setItem('hasLaunched', 'true');
         setIsFirstLaunch(true);
+        setIsLoggedIn(false);
+        setIsLoading(false);
+        return;
       } else if (onboardingComplete !== 'true') {
-        // Has launched but didn't complete onboarding
+        // Has launched but didn't complete onboarding - exit early
         setIsFirstLaunch(true);
+        setIsLoggedIn(false);
+        setIsLoading(false);
+        return;
       } else {
         // Not first launch and onboarding complete
         setIsFirstLaunch(false);
       }
 
-      // Check the session state
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsLoggedIn(!!session);
+      // Only check Supabase session for returning users who completed onboarding
+      // Add timeout protection
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session timeout')), 8000)
+      );
+
+      try {
+        const { data: { session } } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]);
+        setIsLoggedIn(!!session);
+      } catch (sessionError) {
+        console.log('Could not check session, defaulting to logged out:', sessionError.message);
+        setIsLoggedIn(false);
+      }
       
     } catch (error) {
-      console.error('Error checking first launch:', error);
+      console.error('Error in checkFirstLaunch:', error);
       setIsFirstLaunch(false);
+      setIsLoggedIn(false);
     } finally {
       setIsLoading(false);
     }
@@ -236,7 +249,7 @@ function AppContent() {
     };
   }, []);
 
-  if (isLoading) {
+  if (!isLoadingComplete || isLoading) {
     return (
       <View style={{ 
         flex: 1, 
