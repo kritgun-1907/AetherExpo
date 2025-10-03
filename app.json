@@ -16,7 +16,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.AetherExpo",
+      "buildNumber": "1.0.0",
+      "deploymentTarget": "14.0",
       "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to location to track your carbon footprint from transportation.",
+        "NSCameraUsageDescription": "This app needs access to camera to take photos for challenges.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload images.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSExceptionDomains": {
@@ -47,11 +52,11 @@
           "apiKey": "AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE"
         }
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.AetherExpo"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     }
-
   }
 }
