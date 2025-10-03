@@ -186,56 +186,60 @@ function AppContent() {
     checkFirstLaunch();
   }, []);
 
-  const checkFirstLaunch = async () => {
-    try {
-      // Check AsyncStorage first (fast, no network required)
-      const hasLaunched = await AsyncStorage.getItem('hasLaunched');
-      const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
-      
-      if (hasLaunched === null) {
-        // First time launch - exit early without checking Supabase
-        await AsyncStorage.setItem('hasLaunched', 'true');
-        setIsFirstLaunch(true);
-        setIsLoggedIn(false);
-        setIsLoading(false);
-        return;
-      } else if (onboardingComplete !== 'true') {
-        // Has launched but didn't complete onboarding - exit early
-        setIsFirstLaunch(true);
-        setIsLoggedIn(false);
-        setIsLoading(false);
-        return;
-      } else {
-        // Not first launch and onboarding complete
-        setIsFirstLaunch(false);
-      }
-
-      // Only check Supabase session for returning users who completed onboarding
-      // Add timeout protection
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Session timeout')), 8000)
-      );
-
-      try {
-        const { data: { session } } = await Promise.race([
-          sessionPromise,
-          timeoutPromise
-        ]);
-        setIsLoggedIn(!!session);
-      } catch (sessionError) {
-        console.log('Could not check session, defaulting to logged out:', sessionError.message);
-        setIsLoggedIn(false);
-      }
-      
-    } catch (error) {
-      console.error('Error in checkFirstLaunch:', error);
-      setIsFirstLaunch(false);
+ const checkFirstLaunch = async () => {
+  console.log('🔍 Starting checkFirstLaunch...');
+  try {
+    const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+    const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
+    
+    console.log('📱 hasLaunched:', hasLaunched);
+    console.log('✅ onboardingComplete:', onboardingComplete);
+    
+    if (hasLaunched === null) {
+      console.log('👋 First launch detected');
+      await AsyncStorage.setItem('hasLaunched', 'true');
+      setIsFirstLaunch(true);
       setIsLoggedIn(false);
-    } finally {
       setIsLoading(false);
+      return;
+    } else if (onboardingComplete !== 'true') {
+      console.log('⚠️ Onboarding incomplete');
+      setIsFirstLaunch(true);
+      setIsLoggedIn(false);
+      setIsLoading(false);
+      return;
+    } else {
+      console.log('✓ Returning user');
+      setIsFirstLaunch(false);
     }
-  };
+
+    console.log('🔐 Checking Supabase session...');
+    const sessionPromise = supabase.auth.getSession();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Session timeout')), 8000)
+    );
+
+    try {
+      const { data: { session } } = await Promise.race([
+        sessionPromise,
+        timeoutPromise
+      ]);
+      console.log('✓ Session check complete:', !!session);
+      setIsLoggedIn(!!session);
+    } catch (sessionError) {
+      console.log('❌ Session check failed:', sessionError.message);
+      setIsLoggedIn(false);
+    }
+    
+  } catch (error) {
+    console.error('💥 Error in checkFirstLaunch:', error);
+    setIsFirstLaunch(false);
+    setIsLoggedIn(false);
+  } finally {
+    console.log('🏁 Setting isLoading to false');
+    setIsLoading(false);
+  }
+};
 
   useEffect(() => {
     // Set up the real-time listener for auth changes
