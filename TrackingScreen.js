@@ -1,3 +1,27 @@
+// Add at the top of TrackingScreen component
+useEffect(() => {
+  const testSetup = async () => {
+    // Test Google Maps API
+    console.log('=== SETUP TEST ===');
+    console.log('Google Maps Key exists:', !!GOOGLE_MAPS_API_KEY);
+    
+    // Test Location Permissions
+    const { status } = await Location.getForegroundPermissionsAsync();
+    console.log('Location permission:', status);
+    
+    // Test Supabase Connection
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log('User authenticated:', !!user);
+    
+    // Test database connection
+    const testResult = await testDatabaseConnection();
+    console.log('Database connection:', testResult);
+  };
+  
+  testSetup();
+}, []);
+
+
 // TrackingScreen.js - Updated with CarbonCalculator
 import React, { useState } from 'react';
 import ActivityTracker from './src/components/carbon/ActivityTracker';

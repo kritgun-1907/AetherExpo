@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase';
+import { Alert } from 'react-native';
 
 const LOCATION_TASK_NAME = 'AETHER_LOCATION_TRACKING';
 const LOCATION_STORAGE_KEY = '@aether_location_history';
@@ -13,42 +14,74 @@ class LocationService {
     this.currentTrip = null;
     this.lastKnownLocation = null;
     this.travelMode = 'unknown';
+    this.isInitialized = false;
   }
 
   // Initialize location tracking
   async initialize() {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      throw new Error('Location permission not granted');
-    }
+    try {
+      console.log('[LocationService] Initializing...');
+      
+      // Check if already initialized
+      if (this.isInitialized) {
+        console.log('[LocationService] Already initialized');
+        return true;
+      }
 
-    // Request background permissions for continuous tracking
-    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-    if (bgStatus === 'granted') {
-      await this.defineBackgroundTask();
-    }
+      // Request foreground permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('[LocationService] Foreground permission:', status);
+      
+      if (status !== 'granted') {
+        throw new Error('Location permission not granted');
+      }
 
-    return true;
+      // Request background permissions for continuous tracking
+      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      console.log('[LocationService] Background permission:', bgStatus);
+      
+      if (bgStatus === 'granted') {
+        await this.defineBackgroundTask();
+      }
+
+      this.isInitialized = true;
+      console.log('[LocationService] Initialization complete');
+      return true;
+    } catch (error) {
+      console.error('[LocationService] Initialization error:', error);
+      throw error;
+    }
   }
 
   // Define background task for location tracking
   async defineBackgroundTask() {
-    TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
-      if (error) {
-        console.error('Location task error:', error);
-        return;
-      }
+    try {
+      console.log('[LocationService] Defining background task...');
       
-      if (data) {
-        const { locations } = data;
-        await this.processLocationUpdate(locations);
-      }
-    });
+      TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+        if (error) {
+          console.error('[LocationService] Background task error:', error);
+          return;
+        }
+        
+        if (data) {
+          const { locations } = data;
+          console.log('[LocationService] Background location update:', locations.length, 'points');
+          await this.processLocationUpdate(locations);
+        }
+      });
+      
+      console.log('[LocationService] Background task defined');
+    } catch (error) {
+      console.error('[LocationService] Error defining background task:', error);
+    }
   }
 
   // Start tracking a trip
   async startTracking(mode = 'auto-detect') {
     try {
+      console.log('[LocationService] Starting tracking, mode:', mode);
+      
       this.isTracking = true;
       this.travelMode = mode;
       this.currentTrip = {
@@ -59,11 +92,18 @@ class LocationService {
         totalDistance: 0,
         averageSpeed: 0,
         maxSpeed: 0,
+        carbonEmissions: 0,
       };
 
       // Get initial location
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
+      });
+
+      console.log('[LocationService] Initial location:', {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+        accuracy: location.coords.accuracy,
       });
 
       this.lastKnownLocation = location;
@@ -88,9 +128,11 @@ class LocationService {
       });
 
       await this.saveCurrentTrip();
+      console.log('[LocationService] Tracking started successfully');
       return this.currentTrip;
     } catch (error) {
-      console.error('Error starting tracking:', error);
+      console.error('[LocationService] Error starting tracking:', error);
+      this.isTracking = false;
       throw error;
     }
   }
@@ -98,6 +140,7 @@ class LocationService {
   // Stop tracking
   async stopTracking() {
     try {
+      console.log('[LocationService] Stopping tracking...');
       this.isTracking = false;
       
       // Stop background tracking
@@ -119,23 +162,37 @@ class LocationService {
         
         this.currentTrip.carbonEmissions = emissions;
         
+        console.log('[LocationService] Trip completed:', {
+          distance: this.currentTrip.totalDistance,
+          mode: this.currentTrip.mode,
+          emissions: emissions,
+        });
+        
         // Save to database
         await this.saveTripToDatabase(this.currentTrip);
         
         const tripData = { ...this.currentTrip };
         this.currentTrip = null;
         
+        console.log('[LocationService] Tracking stopped successfully');
         return tripData;
       }
+      
+      return null;
     } catch (error) {
-      console.error('Error stopping tracking:', error);
+      console.error('[LocationService] Error stopping tracking:', error);
       throw error;
     }
   }
 
   // Process location updates
   async processLocationUpdate(locations) {
-    if (!this.currentTrip || !this.isTracking) return;
+    if (!this.currentTrip || !this.isTracking) {
+      console.log('[LocationService] No active trip, ignoring location update');
+      return;
+    }
+
+    console.log('[LocationService] Processing', locations.length, 'location updates');
 
     for (const location of locations) {
       const newLocation = {
@@ -156,6 +213,7 @@ class LocationService {
         );
         
         this.currentTrip.totalDistance += distance;
+        console.log('[LocationService] Distance added:', distance, 'km, Total:', this.currentTrip.totalDistance);
       }
 
       // Update speed statistics
@@ -188,6 +246,8 @@ class LocationService {
     const avgSpeedKmh = (trip.averageSpeed || 0) * 3.6; // Convert m/s to km/h
     const maxSpeedKmh = (trip.maxSpeed || 0) * 3.6;
     
+    console.log('[LocationService] Detecting mode - Avg speed:', avgSpeedKmh, 'km/h, Max:', maxSpeedKmh, 'km/h');
+    
     // Speed-based detection with thresholds
     if (avgSpeedKmh < 5 && maxSpeedKmh < 10) {
       return 'walk';
@@ -208,6 +268,8 @@ class LocationService {
     // Check for stop patterns
     const stops = this.detectStops(trip.locations);
     const stopFrequency = stops.length / (trip.totalDistance / 1000); // Stops per km
+    
+    console.log('[LocationService] Stop frequency:', stopFrequency, 'stops/km');
     
     // Buses stop more frequently
     if (stopFrequency > 2) {
@@ -313,41 +375,208 @@ class LocationService {
       motorcycle: 0.113,
     };
     
-    return distanceKm * (emissionFactors[mode] || 0.21);
+    const emissions = distanceKm * (emissionFactors[mode] || 0.21);
+    console.log('[LocationService] Calculated emissions:', emissions, 'kg CO2 for', distanceKm, 'km by', mode);
+    return emissions;
   }
 
   // Save current trip to storage
   async saveCurrentTrip() {
     if (this.currentTrip) {
-      await AsyncStorage.setItem(
-        LOCATION_STORAGE_KEY,
-        JSON.stringify(this.currentTrip)
-      );
+      try {
+        await AsyncStorage.setItem(
+          LOCATION_STORAGE_KEY,
+          JSON.stringify(this.currentTrip)
+        );
+        console.log('[LocationService] Trip saved to local storage');
+      } catch (error) {
+        console.error('[LocationService] Error saving trip to local storage:', error);
+      }
     }
   }
 
-  // Save completed trip to database
+  // BACKEND CONNECTION - Save completed trip to Supabase database
   async saveTripToDatabase(trip) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      console.log('[LocationService] Saving trip to database...');
+      console.log('[LocationService] Trip data:', {
+        mode: trip.mode,
+        distance: trip.totalDistance,
+        emissions: trip.carbonEmissions,
+        duration: (new Date(trip.endTime) - new Date(trip.startTime)) / 60000,
+      });
 
-      await supabase.from('emissions').insert({
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('[LocationService] Error getting user:', userError);
+        throw new Error('User not authenticated');
+      }
+      
+      if (!user) {
+        console.error('[LocationService] No user found, cannot save trip');
+        Alert.alert('Error', 'Please login to save your trips');
+        return null;
+      }
+
+      console.log('[LocationService] User ID:', user.id);
+
+      // Prepare emission data
+      const emissionData = {
         user_id: user.id,
         category: 'transport',
         subcategory: trip.mode,
         amount: trip.carbonEmissions,
         description: `${trip.mode} trip: ${trip.totalDistance.toFixed(2)}km`,
+        source: 'gps',
         metadata: {
+          trip_id: trip.id,
           distance_km: trip.totalDistance,
           duration_minutes: (new Date(trip.endTime) - new Date(trip.startTime)) / 60000,
           average_speed_kmh: trip.averageSpeed * 3.6,
           max_speed_kmh: trip.maxSpeed * 3.6,
           route_points: trip.locations.length,
+          start_time: trip.startTime,
+          end_time: trip.endTime,
+          start_location: trip.locations[0] ? {
+            lat: trip.locations[0].latitude,
+            lng: trip.locations[0].longitude,
+          } : null,
+          end_location: trip.locations[trip.locations.length - 1] ? {
+            lat: trip.locations[trip.locations.length - 1].latitude,
+            lng: trip.locations[trip.locations.length - 1].longitude,
+          } : null,
         },
-      });
+        created_at: new Date().toISOString(),
+      };
+
+      console.log('[LocationService] Inserting emission data:', emissionData);
+
+      // Insert into emissions table
+      const { data, error } = await supabase
+        .from('emissions')
+        .insert(emissionData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[LocationService] Database insert error:', error);
+        console.error('[LocationService] Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+        
+        // Show user-friendly error message
+        Alert.alert(
+          'Save Error',
+          `Failed to save trip: ${error.message || 'Unknown error'}`,
+          [{ text: 'OK' }]
+        );
+        throw error;
+      }
+
+      console.log('[LocationService] Trip saved successfully to database:', data);
+      
+      // Update user's total emissions
+      await this.updateUserTotalEmissions(user.id, trip.carbonEmissions);
+      
+      // Check for achievements
+      await this.checkForAchievements(user.id, trip);
+
+      // Show success message
+      Alert.alert(
+        'Trip Saved!',
+        `Your ${trip.mode} trip has been saved.\nDistance: ${trip.totalDistance.toFixed(2)}km\nEmissions: ${trip.carbonEmissions.toFixed(2)}kg CO₂`,
+        [{ text: 'Great!' }]
+      );
+
+      return data;
     } catch (error) {
-      console.error('Error saving trip to database:', error);
+      console.error('[LocationService] Error saving trip to database:', error);
+      
+      // Save locally as backup if database save fails
+      await this.saveFailedTripLocally(trip);
+      
+      throw error;
+    }
+  }
+
+  // Update user's total emissions
+  async updateUserTotalEmissions(userId, emissionsToAdd) {
+    try {
+      console.log('[LocationService] Updating user total emissions...');
+      
+      // Get current user profile
+      const { data: profile, error: fetchError } = await supabase
+        .from('user_profiles')
+        .select('total_emissions')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError) {
+        console.error('[LocationService] Error fetching user profile:', fetchError);
+        return;
+      }
+
+      const newTotal = (profile?.total_emissions || 0) + emissionsToAdd;
+
+      // Update total emissions
+      const { error: updateError } = await supabase
+        .from('user_profiles')
+        .update({
+          total_emissions: newTotal,
+          last_activity_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('[LocationService] Error updating user profile:', updateError);
+      } else {
+        console.log('[LocationService] User total emissions updated to:', newTotal);
+      }
+    } catch (error) {
+      console.error('[LocationService] Error updating user total emissions:', error);
+    }
+  }
+
+  // Check for achievements
+  async checkForAchievements(userId, trip) {
+    try {
+      console.log('[LocationService] Checking for achievements...');
+      
+      // Check distance-based achievements
+      if (trip.totalDistance > 50) {
+        console.log('[LocationService] Long distance trip achievement unlocked!');
+        // You can implement achievement logic here
+      }
+      
+      // Check eco-friendly mode achievements
+      if (trip.mode === 'walk' || trip.mode === 'bike') {
+        console.log('[LocationService] Eco-friendly transport achievement!');
+        // Award eco points
+      }
+    } catch (error) {
+      console.error('[LocationService] Error checking achievements:', error);
+    }
+  }
+
+  // Save failed trip locally for retry
+  async saveFailedTripLocally(trip) {
+    try {
+      const failedTrips = await AsyncStorage.getItem('@failed_trips') || '[]';
+      const trips = JSON.parse(failedTrips);
+      trips.push({
+        ...trip,
+        savedAt: new Date().toISOString(),
+      });
+      await AsyncStorage.setItem('@failed_trips', JSON.stringify(trips));
+      console.log('[LocationService] Trip saved locally for later retry');
+    } catch (error) {
+      console.error('[LocationService] Error saving failed trip locally:', error);
     }
   }
 
@@ -358,6 +587,24 @@ class LocationService {
       currentTrip: this.currentTrip,
       mode: this.travelMode,
     };
+  }
+
+  // Resume tracking from saved trip
+  async resumeTracking() {
+    try {
+      const savedTrip = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+      if (savedTrip) {
+        this.currentTrip = JSON.parse(savedTrip);
+        this.isTracking = true;
+        this.travelMode = this.currentTrip.mode;
+        console.log('[LocationService] Resumed tracking from saved trip');
+        return this.currentTrip;
+      }
+      return null;
+    } catch (error) {
+      console.error('[LocationService] Error resuming tracking:', error);
+      return null;
+    }
   }
 }
 

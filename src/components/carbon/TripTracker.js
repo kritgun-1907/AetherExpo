@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   ScrollView,
   Modal,
+  Platform,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import LocationService from '../../services/LocationService';
+import GoogleMapsService from '../../api/googleMaps';
 import * as Location from 'expo-location';
 
 export default function TripTracker({ onTripComplete }) {
@@ -27,6 +29,10 @@ export default function TripTracker({ onTripComplete }) {
   const [showModeSelector, setShowModeSelector] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [routeCoordinates, setRouteCoordinates] = useState([]);
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [currentSpeed, setCurrentSpeed] = useState(0);
+  const [locationSubscription, setLocationSubscription] = useState(null);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const transportModes = [
     { id: 'auto-detect', name: 'Auto Detect', icon: 'analytics', color: '#8B5CF6' },
@@ -38,11 +44,16 @@ export default function TripTracker({ onTripComplete }) {
   ];
 
   useEffect(() => {
+    console.log('TripTracker mounted, initializing location...');
     initializeLocation();
     
     return () => {
+      console.log('TripTracker unmounting, cleaning up...');
       if (isTracking) {
         handleStopTracking();
+      }
+      if (locationSubscription) {
+        locationSubscription.remove();
       }
     };
   }, []);
@@ -52,7 +63,6 @@ export default function TripTracker({ onTripComplete }) {
     if (isTracking) {
       interval = setInterval(() => {
         setElapsedTime(prev => prev + 1);
-        updateCurrentLocation();
       }, 1000);
     }
     return () => clearInterval(interval);
@@ -60,70 +70,195 @@ export default function TripTracker({ onTripComplete }) {
 
   const initializeLocation = async () => {
     try {
-      await LocationService.initialize();
+      console.log('Requesting location permissions...');
+      
+      // Request foreground permissions first
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('Foreground permission status:', status);
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Denied',
+          'Location permission is required to track your trips. Please enable it in settings.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Request background permissions for continuous tracking
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+        console.log('Background permission status:', bgStatus);
+      }
+
+      // Get current location
+      console.log('Getting current location...');
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
       
-      setCurrentLocation({
+      console.log('Current location obtained:', {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+        accuracy: location.coords.accuracy,
+      });
+
+      const initialRegion = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
-      });
+      };
+      
+      setCurrentLocation(initialRegion);
+      
+      // Center map on current location
+      if (mapRef.current && isMapReady) {
+        mapRef.current.animateToRegion(initialRegion, 1000);
+      }
     } catch (error) {
-      Alert.alert('Location Error', 'Could not get your current location');
+      console.error('Location initialization error:', error);
+      Alert.alert('Location Error', 'Could not get your current location: ' + error.message);
     }
   };
 
-  const updateCurrentLocation = async () => {
+  const startLocationTracking = async () => {
     try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      console.log('Starting location tracking subscription...');
       
-      const newCoord = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000, // Update every second
+          distanceInterval: 5, // Or every 5 meters
+        },
+        (location) => {
+          console.log('Location update received:', {
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+            speed: location.coords.speed,
+          });
+          
+          const newCoord = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          };
+          
+          // Update current location
+          setCurrentLocation({
+            ...newCoord,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+          });
+          
+          // Update speed
+          if (location.coords.speed) {
+            setCurrentSpeed(location.coords.speed * 3.6); // Convert m/s to km/h
+          }
+          
+          // Add to route
+          setRouteCoordinates(prev => {
+            const newRoute = [...prev, newCoord];
+            
+            // Calculate total distance
+            if (prev.length > 0) {
+              const lastCoord = prev[prev.length - 1];
+              const distance = calculateDistance(lastCoord, newCoord);
+              setTotalDistance(prevDistance => prevDistance + distance);
+            }
+            
+            return newRoute;
+          });
+          
+          // Update map to follow user
+          if (mapRef.current && isMapReady) {
+            mapRef.current.animateToRegion({
+              ...newCoord,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 500);
+          }
+        }
+      );
       
-      setCurrentLocation({
-        ...newCoord,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
-      
-      if (isTracking) {
-        setRouteCoordinates(prev => [...prev, newCoord]);
-        
-        // Update map to follow user
-        mapRef.current?.animateToRegion({
-          ...newCoord,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        }, 1000);
-      }
+      setLocationSubscription(subscription);
+      console.log('Location tracking started successfully');
     } catch (error) {
-      console.error('Error updating location:', error);
+      console.error('Error starting location tracking:', error);
+      Alert.alert('Tracking Error', 'Failed to start location tracking: ' + error.message);
     }
+  };
+
+  const calculateDistance = (coord1, coord2) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = deg2rad(coord2.latitude - coord1.latitude);
+    const dLon = deg2rad(coord2.longitude - coord1.longitude);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(coord1.latitude)) *
+        Math.cos(deg2rad(coord2.latitude)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const deg2rad = (deg) => {
+    return deg * (Math.PI / 180);
   };
 
   const handleStartTracking = async () => {
     try {
+      console.log('Starting trip tracking with mode:', selectedMode);
+      
+      // Initialize LocationService
+      await LocationService.initialize();
+      
+      // Start tracking
       const trip = await LocationService.startTracking(selectedMode);
       setTripData(trip);
       setIsTracking(true);
       setElapsedTime(0);
+      setTotalDistance(0);
       setRouteCoordinates([]);
       setShowModeSelector(false);
+      
+      // Start location subscription
+      await startLocationTracking();
+      
+      console.log('Trip tracking started successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to start tracking');
+      console.error('Failed to start tracking:', error);
+      Alert.alert('Error', 'Failed to start tracking: ' + error.message);
     }
   };
 
   const handleStopTracking = async () => {
     try {
-      const completedTrip = await LocationService.stopTracking();
+      console.log('Stopping trip tracking...');
+      
+      // Stop location subscription
+      if (locationSubscription) {
+        locationSubscription.remove();
+        setLocationSubscription(null);
+      }
+      
+      // Calculate emissions based on mode
+      const emissions = calculateEmissions(totalDistance, selectedMode);
+      
+      // Prepare trip data
+      const completedTrip = {
+        id: Date.now().toString(),
+        mode: selectedMode === 'auto-detect' ? detectModeFromSpeed() : selectedMode,
+        totalDistance: totalDistance,
+        carbonEmissions: emissions,
+        duration: elapsedTime,
+        averageSpeed: totalDistance / (elapsedTime / 3600), // km/h
+        routeCoordinates: routeCoordinates,
+        startTime: new Date(Date.now() - elapsedTime * 1000).toISOString(),
+        endTime: new Date().toISOString(),
+      };
+      
       setIsTracking(false);
       
       // Show trip summary
@@ -132,30 +267,67 @@ export default function TripTracker({ onTripComplete }) {
         `Distance: ${completedTrip.totalDistance.toFixed(2)} km\n` +
         `Mode: ${completedTrip.mode}\n` +
         `Carbon Emissions: ${completedTrip.carbonEmissions.toFixed(2)} kg CO₂\n` +
-        `Duration: ${formatTime(elapsedTime)}`,
+        `Duration: ${formatTime(elapsedTime)}\n` +
+        `Average Speed: ${completedTrip.averageSpeed.toFixed(1)} km/h`,
         [
           {
             text: 'Save',
-            onPress: () => {
+            onPress: async () => {
+              console.log('Saving trip to backend...');
+              
+              // Save to LocationService (which saves to Supabase)
+              await LocationService.saveTripToDatabase(completedTrip);
+              
+              // Notify parent component
               onTripComplete?.(completedTrip);
+              
               resetTrip();
+              Alert.alert('Success', 'Trip saved successfully!');
             }
           },
           {
             text: 'Discard',
             style: 'destructive',
-            onPress: () => resetTrip()
+            onPress: () => {
+              console.log('Trip discarded');
+              resetTrip();
+            }
           }
         ]
       );
     } catch (error) {
-      Alert.alert('Error', 'Failed to stop tracking');
+      console.error('Error stopping tracking:', error);
+      Alert.alert('Error', 'Failed to stop tracking: ' + error.message);
     }
+  };
+
+  const detectModeFromSpeed = () => {
+    const avgSpeed = totalDistance / (elapsedTime / 3600);
+    
+    if (avgSpeed < 5) return 'walk';
+    if (avgSpeed < 15) return 'bike';
+    if (avgSpeed < 50) return 'bus';
+    return 'car';
+  };
+
+  const calculateEmissions = (distance, mode) => {
+    const emissionFactors = {
+      walk: 0,
+      bike: 0,
+      bus: 0.089,
+      train: 0.041,
+      car: 0.21,
+      'auto-detect': 0.15, // Average
+    };
+    
+    return distance * (emissionFactors[mode] || 0.21);
   };
 
   const resetTrip = () => {
     setTripData(null);
     setElapsedTime(0);
+    setTotalDistance(0);
+    setCurrentSpeed(0);
     setRouteCoordinates([]);
     setSelectedMode('auto-detect');
   };
@@ -164,7 +336,14 @@ export default function TripTracker({ onTripComplete }) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${hours}h ${minutes}m ${secs}s`;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
   };
 
   const getMapStyle = () => {
@@ -182,46 +361,78 @@ export default function TripTracker({ onTripComplete }) {
           elementType: "labels.text.fill",
           stylers: [{ color: "#746855" }],
         },
-        // ... add more dark mode styles
+        {
+          featureType: "road",
+          elementType: "geometry",
+          stylers: [{ color: "#38414e" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry.stroke",
+          stylers: [{ color: "#212a37" }],
+        },
       ];
     }
     return [];
   };
 
+  // Show loading while waiting for location
+  if (!currentLocation) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.accentText} />
+        <Text style={[styles.loadingText, { color: theme.primaryText }]}>
+          Getting your location...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Map View */}
-      {currentLocation && (
-        <MapView
-          ref={mapRef}
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          initialRegion={currentLocation}
-          showsUserLocation={true}
-          showsMyLocationButton={true}
-          showsCompass={true}
-          customMapStyle={getMapStyle()}
-        >
-          {/* Route polyline */}
-          {routeCoordinates.length > 1 && (
-            <Polyline
-              coordinates={routeCoordinates}
-              strokeColor="#10B981"
-              strokeWidth={4}
-              lineDashPattern={[1]}
-            />
-          )}
-          
-          {/* Start marker */}
-          {routeCoordinates.length > 0 && (
-            <Marker
-              coordinate={routeCoordinates[0]}
-              title="Start"
-              pinColor="#10B981"
-            />
-          )}
-        </MapView>
-      )}
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        initialRegion={currentLocation}
+        showsUserLocation={true}
+        showsMyLocationButton={true}
+        showsCompass={true}
+        customMapStyle={getMapStyle()}
+        onMapReady={() => {
+          console.log('Map is ready');
+          setIsMapReady(true);
+        }}
+      >
+        {/* Route polyline */}
+        {routeCoordinates.length > 1 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#10B981"
+            strokeWidth={4}
+            lineDashPattern={[1]}
+          />
+        )}
+        
+        {/* Start marker */}
+        {routeCoordinates.length > 0 && (
+          <Marker
+            coordinate={routeCoordinates[0]}
+            title="Start"
+            pinColor="#10B981"
+          />
+        )}
+        
+        {/* Current position marker (if tracking) */}
+        {isTracking && routeCoordinates.length > 0 && (
+          <Marker
+            coordinate={routeCoordinates[routeCoordinates.length - 1]}
+            title="Current Position"
+            pinColor="#EF4444"
+          />
+        )}
+      </MapView>
 
       {/* Tracking Info Panel */}
       <View style={[styles.infoPanel, { 
@@ -247,7 +458,7 @@ export default function TripTracker({ onTripComplete }) {
               <View style={styles.statItem}>
                 <Ionicons name="navigate-outline" size={20} color={theme.secondaryText} />
                 <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                  {(LocationService.currentTrip?.totalDistance || 0).toFixed(2)} km
+                  {totalDistance.toFixed(2)} km
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
                   Distance
@@ -255,9 +466,19 @@ export default function TripTracker({ onTripComplete }) {
               </View>
               
               <View style={styles.statItem}>
+                <Ionicons name="speedometer-outline" size={20} color={theme.secondaryText} />
+                <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                  {currentSpeed.toFixed(1)} km/h
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+                  Speed
+                </Text>
+              </View>
+              
+              <View style={styles.statItem}>
                 <Ionicons name="leaf-outline" size={20} color={theme.accentText} />
                 <Text style={[styles.statValue, { color: theme.accentText }]}>
-                  {(LocationService.currentTrip?.carbonEmissions || 0).toFixed(2)} kg
+                  {calculateEmissions(totalDistance, selectedMode).toFixed(2)} kg
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
                   CO₂
@@ -362,6 +583,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+  },
   map: {
     flex: 1,
   },
@@ -395,14 +624,15 @@ const styles = StyleSheet.create({
   },
   statItem: {
     alignItems: 'center',
+    flex: 1,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     marginVertical: 5,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
   },
   stopButton: {
     flexDirection: 'row',

@@ -13,7 +13,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-       "ios": {
+    "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.AetherExpo",
       "infoPlist": {
@@ -26,26 +26,32 @@
             }
           }
         }
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE"
       }
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-       "permissions": [
+      "permissions": [
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ],
-      
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE"
+        }
+      },
       "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-font"
-    ]
+    }
+
   }
 }
