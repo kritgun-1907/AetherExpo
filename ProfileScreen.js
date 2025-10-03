@@ -16,7 +16,7 @@ import { supabase, signOut } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import { useCarbonStore } from './src/store/carbonStore'; // Add this import
 import FriendsList from './src/components/social/FriendsList'; 
-import { useEmissions } from '../hooks/useEmissions';
+import { useEmissions } from './src/hooks/useEmissions';
 import AvatarUpload from './src/components/profile/AvatarUpload';
 
 

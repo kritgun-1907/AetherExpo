@@ -391,9 +391,9 @@ export default function TripTracker({ onTripComplete }) {
   return (
     <View style={styles.container}>
       {/* Map View */}
-      <MapView
+     <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
+        provider={Platform.OS === 'ios' ? undefined : PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={currentLocation}
         showsUserLocation={true}

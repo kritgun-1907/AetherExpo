@@ -7,33 +7,22 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.AetherExpo",
       "buildNumber": "1.0.0",
-      "deploymentTarget": "14.0",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to location to track your carbon footprint from transportation.",
         "NSCameraUsageDescription": "This app needs access to camera to take photos for challenges.",
-        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload images.",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
-          "NSExceptionDomains": {
-            "supabase.co": {
-              "NSExceptionAllowsInsecureHTTPLoads": false,
-              "NSIncludesSubdomains": true
-            }
-          }
-        }
-      },
-      "config": {
-        "googleMapsApiKey": "AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE"
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to upload images."
       }
     },
     "android": {
@@ -41,22 +30,23 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.anonymous.AetherExpo",
       "permissions": [
-        "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
-      ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE"
-        }
-      },
-      "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.AetherExpo"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-location",
+      "expo-image-picker"
+    ]
   }
 }
