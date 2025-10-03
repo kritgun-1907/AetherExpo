@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import ActivityTracker from './src/components/carbon/ActivityTracker';
 import { calculateRealEmissions } from './src/api/climatiq';
 import CarbonCalculator from './src/components/carbon/CarbonCalculator'; // NEW IMPORT
+import TripTracker from './src/components/carbon/TripTracker';
 import {
   View,
   Text,
@@ -70,6 +71,13 @@ export default function TrackingScreen() {
       storeAddEmission(calculationData.emissions, calculationData.category);
     }
   };
+
+  const handleTripComplete = (tripData) => {
+  console.log('Trip complete:', tripData);
+  if (storeAddEmission) {
+    storeAddEmission(tripData.emissions, 'transport');
+  }
+};
 
   const calculateEmissions = () => {
     let emissions = 0;
@@ -182,77 +190,77 @@ export default function TrackingScreen() {
           <Text style={[styles.subtitle, { color: theme.secondaryText }]}>Log your daily carbon emissions</Text>
         </View>
 
-        {/* View Selector - NEW */}
-        <View style={styles.viewSelector}>
-          <TouchableOpacity
-            style={[
-              styles.viewButton,
-              {
-                backgroundColor: activeView === 'quick' ? theme.accentText : 'transparent',
-                borderColor: theme.accentText,
-              }
-            ]}
-            onPress={() => setActiveView('quick')}
-          >
-            <Ionicons 
-              name="flash-outline" 
-              size={20} 
-              color={activeView === 'quick' ? '#FFFFFF' : theme.accentText} 
-            />
-            <Text style={[
-              styles.viewButtonText,
-              { color: activeView === 'quick' ? '#FFFFFF' : theme.accentText }
-            ]}>
-              Quick Track
-            </Text>
-          </TouchableOpacity>
+  {/* View Selector - NEW */}
+<View style={styles.viewSelector}>
+  <TouchableOpacity
+    style={[
+      styles.viewButton,
+      {
+        backgroundColor: activeView === 'quick' ? theme.accentText : 'transparent',
+        borderColor: theme.accentText,
+      }
+    ]}
+    onPress={() => setActiveView('quick')}
+  >
+    <Ionicons 
+      name="flash-outline" 
+      size={20} 
+      color={activeView === 'quick' ? '#FFFFFF' : theme.accentText} 
+    />
+    <Text style={[
+      styles.viewButtonText,
+      { color: activeView === 'quick' ? '#FFFFFF' : theme.accentText }
+    ]}>
+      Quick Track
+    </Text>
+  </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.viewButton,
-              {
-                backgroundColor: activeView === 'calculator' ? theme.accentText : 'transparent',
-                borderColor: theme.accentText,
-              }
-            ]}
-            onPress={() => setActiveView('calculator')}
-          >
-            <Ionicons 
-              name="calculator-outline" 
-              size={20} 
-              color={activeView === 'calculator' ? '#FFFFFF' : theme.accentText} 
-            />
-            <Text style={[
-              styles.viewButtonText,
-              { color: activeView === 'calculator' ? '#FFFFFF' : theme.accentText }
-            ]}>
-              Calculator
-            </Text>
-          </TouchableOpacity>
+  <TouchableOpacity
+    style={[
+      styles.viewButton,
+      {
+        backgroundColor: activeView === 'calculator' ? theme.accentText : 'transparent',
+        borderColor: theme.accentText,
+      }
+    ]}
+    onPress={() => setActiveView('calculator')}
+  >
+    <Ionicons 
+      name="calculator-outline" 
+      size={20} 
+      color={activeView === 'calculator' ? '#FFFFFF' : theme.accentText} 
+    />
+    <Text style={[
+      styles.viewButtonText,
+      { color: activeView === 'calculator' ? '#FFFFFF' : theme.accentText }
+    ]}>
+      Calculator
+    </Text>
+  </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.viewButton,
-              {
-                backgroundColor: activeView === 'tracker' ? theme.accentText : 'transparent',
-                borderColor: theme.accentText,
-              }
-            ]}
-            onPress={() => setActiveView('tracker')}
-          >
-            <Ionicons 
-              name="analytics-outline" 
-              size={20} 
-              color={activeView === 'tracker' ? '#FFFFFF' : theme.accentText} 
-            />
-            <Text style={[
-              styles.viewButtonText,
-              { color: activeView === 'tracker' ? '#FFFFFF' : theme.accentText }
-            ]}>
-              Advanced
-            </Text>
-          </TouchableOpacity>
-        </View>
+  <TouchableOpacity
+    style={[
+      styles.viewButton,
+      {
+        backgroundColor: activeView === 'location' ? theme.accentText : 'transparent',
+        borderColor: theme.accentText,
+      }
+    ]}
+    onPress={() => setActiveView('location')}
+  >
+    <Ionicons 
+      name="location-outline" 
+      size={20} 
+      color={activeView === 'location' ? '#FFFFFF' : theme.accentText} 
+    />
+    <Text style={[
+      styles.viewButtonText,
+      { color: activeView === 'location' ? '#FFFFFF' : theme.accentText }
+    ]}>
+      Location
+    </Text>
+  </TouchableOpacity>
+</View>
 
         {/* Quick Track View (Original) */}
         {activeView === 'quick' && (
@@ -465,6 +473,16 @@ export default function TrackingScreen() {
         {activeView === 'calculator' && (
           <CarbonCalculator onCalculationComplete={handleCalculationComplete} />
         )}
+
+        {/* Location-Based Trip Tracker View */}
+            {activeView === 'location' && (
+              <View style={[dynamicStyles.form]}>
+                <Text style={[styles.formTitle, { color: theme.primaryText }]}>
+                  Location-Based Tracking
+                </Text>
+                <TripTracker onTripComplete={handleTripComplete} />
+              </View>
+            )}
 
         {/* Advanced Activity Tracker View */}
         {activeView === 'tracker' && (
