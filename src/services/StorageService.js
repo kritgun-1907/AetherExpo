@@ -1,4 +1,4 @@
-// src/services/storageService.js
+// src/services/StorageService.js - FIXED VERSION
 import { supabase } from '../api/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -13,6 +13,34 @@ class StorageService {
       CERTIFICATES: 'certificates',
       APP_ASSETS: 'app-assets'
     };
+  }
+
+  /**
+   * Get proper MIME type for file extension
+   */
+  getMimeType(fileExt) {
+    const ext = fileExt.toLowerCase();
+    const mimeTypes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'pdf': 'application/pdf',
+      'heic': 'image/heic',
+      'heif': 'image/heif'
+    };
+    
+    return mimeTypes[ext] || 'application/octet-stream';
+  }
+
+  /**
+   * Get file extension from URI
+   */
+  getFileExtension(uri) {
+    const extension = uri.split('.').pop()?.toLowerCase() || 'jpg';
+    // Normalize jpg to jpeg for consistency
+    return extension === 'jpg' ? 'jpeg' : extension;
   }
 
   /**
@@ -44,32 +72,49 @@ class StorageService {
   }
 
   /**
-   * Upload user avatar
+   * Upload user avatar - FIXED VERSION
    */
   async uploadAvatar(userId, imageUri) {
     try {
+      console.log('📤 Uploading avatar for user:', userId);
+      console.log('📁 Image URI:', imageUri);
+
       // Read the image file
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      // Get file extension
-      const fileExt = imageUri.split('.').pop();
+      // Get file extension and normalize it
+      const fileExt = this.getFileExtension(imageUri);
+      const mimeType = this.getMimeType(fileExt);
+      
+      console.log('📋 File extension:', fileExt);
+      console.log('📋 MIME type:', mimeType);
+
       const fileName = `${userId}/avatar-${Date.now()}.${fileExt}`;
       
-      // Upload to Supabase Storage
+      console.log('📝 Uploading to:', fileName);
+
+      // Upload to Supabase Storage with correct MIME type
       const { data, error } = await supabase.storage
         .from(this.buckets.AVATARS)
         .upload(fileName, decode(base64), {
-          contentType: `image/${fileExt}`,
+          contentType: mimeType, // ✅ Now using proper MIME type
           upsert: true
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Upload error:', error);
+        throw error;
+      }
+
+      console.log('✅ Upload successful:', data);
 
       // Update user profile with avatar URL
       const avatarUrl = this.getPublicUrl(this.buckets.AVATARS, data.path);
       
+      console.log('🔗 Avatar URL:', avatarUrl);
+
       const { error: updateError } = await supabase
         .from('user_profiles')
         .update({ 
@@ -79,7 +124,12 @@ class StorageService {
         })
         .eq('id', userId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('❌ Profile update error:', updateError);
+        throw updateError;
+      }
+
+      console.log('✅ Avatar upload complete!');
 
       return {
         success: true,
@@ -87,10 +137,10 @@ class StorageService {
         path: data.path
       };
     } catch (error) {
-      console.error('Error uploading avatar:', error);
+      console.error('❌ Error uploading avatar:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message || 'Failed to upload avatar'
       };
     }
   }
@@ -116,6 +166,8 @@ class StorageService {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        // Force JPEG format
+        allowsMultipleSelection: false,
       });
 
       if (!result.canceled) {
@@ -136,7 +188,7 @@ class StorageService {
   }
 
   /**
-   * Upload receipt for carbon tracking
+   * Upload receipt for carbon tracking - FIXED
    */
   async uploadReceipt(userId, receiptUri, metadata = {}) {
     try {
@@ -144,13 +196,14 @@ class StorageService {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      const fileExt = receiptUri.split('.').pop();
+      const fileExt = this.getFileExtension(receiptUri);
+      const mimeType = this.getMimeType(fileExt);
       const fileName = `${userId}/receipt-${Date.now()}.${fileExt}`;
       
       const { data, error } = await supabase.storage
         .from(this.buckets.RECEIPTS)
         .upload(fileName, decode(base64), {
-          contentType: fileExt === 'pdf' ? 'application/pdf' : `image/${fileExt}`,
+          contentType: mimeType, // ✅ Fixed MIME type
           metadata: metadata
         });
 
@@ -162,6 +215,9 @@ class StorageService {
         .insert({
           user_id: userId,
           storage_path: data.path,
+          file_name: fileName,
+          file_size: base64.length,
+          mime_type: mimeType,
           metadata: metadata,
           uploaded_at: new Date().toISOString()
         })
@@ -185,7 +241,7 @@ class StorageService {
   }
 
   /**
-   * Upload challenge image
+   * Upload challenge image - FIXED
    */
   async uploadChallengeImage(challengeId, imageUri) {
     try {
@@ -193,13 +249,14 @@ class StorageService {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      const fileExt = imageUri.split('.').pop();
+      const fileExt = this.getFileExtension(imageUri);
+      const mimeType = this.getMimeType(fileExt);
       const fileName = `${challengeId}/image-${Date.now()}.${fileExt}`;
       
       const { data, error } = await supabase.storage
         .from(this.buckets.CHALLENGE_IMAGES)
         .upload(fileName, decode(base64), {
-          contentType: `image/${fileExt}`
+          contentType: mimeType // ✅ Fixed MIME type
         });
 
       if (error) throw error;

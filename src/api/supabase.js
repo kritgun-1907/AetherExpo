@@ -188,7 +188,9 @@ export const addEmission = async (userId, category, amount, subcategory = null) 
     }
 
     const numericAmount = parseFloat(amount);
-    const validCategories = ['transport', 'food', 'energy', 'shopping', 'waste', 'home'];
+const validCategories = ['transport', 'food', 'home', 'shopping'];
+// Map 'energy' to 'home' if users try to use it
+const normalizedCategory = category.toLowerCase() === 'energy' ? 'home' : category.toLowerCase();
     
     if (!validCategories.includes(category.toLowerCase())) {
       throw new Error(`Invalid category. Must be one of: ${validCategories.join(', ')}`);
@@ -284,10 +286,12 @@ export const addEmissionSimple = async (userId, category, amount) => {
   }
 };
 
-// Update daily emissions summary (improved error handling)
 const updateDailySummary = async (userId, category, amount) => {
   try {
     const today = new Date().toISOString().split('T')[0];
+    
+    // Map energy category to home (since that's what the table has)
+    const mappedCategory = category === 'energy' ? 'home' : category;
     
     // Check if summary exists for today
     const { data: existing, error: fetchError } = await supabase
@@ -302,7 +306,7 @@ const updateDailySummary = async (userId, category, amount) => {
       return;
     }
 
-    const categoryColumn = `${category}_emissions`;
+    const categoryColumn = `${mappedCategory}_emissions`;
     
     if (existing) {
       // Update existing summary
@@ -321,14 +325,14 @@ const updateDailySummary = async (userId, category, amount) => {
         console.warn('Could not update daily summary:', updateError);
       }
     } else {
-      // Create new summary
+      // Create new summary - only use valid columns
       const newSummary = {
         user_id: userId,
         date: today,
-        transport_emissions: category === 'transport' ? amount : 0,
-        food_emissions: category === 'food' ? amount : 0,
-        energy_emissions: category === 'energy' ? amount : 0,
-        shopping_emissions: category === 'shopping' ? amount : 0,
+        transport_emissions: mappedCategory === 'transport' ? amount : 0,
+        food_emissions: mappedCategory === 'food' ? amount : 0,
+        home_emissions: mappedCategory === 'home' ? amount : 0,  // ✅ Fixed!
+        shopping_emissions: mappedCategory === 'shopping' ? amount : 0,
         total_emissions: amount,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
