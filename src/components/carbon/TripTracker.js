@@ -1,4 +1,4 @@
-// src/components/carbon/TripTracker.js - FIXED VERSION
+// src/components/carbon/TripTracker.js - SIMPLE VERSION WITHOUT REANIMATED
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -11,6 +11,9 @@ import {
   Modal,
   Platform,
   Dimensions,
+  Animated,
+  Linking,
+  PanResponder,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +22,11 @@ import * as Location from 'expo-location';
 import { supabase } from '../../api/supabase';
 
 const { width, height } = Dimensions.get('window');
+
+// Panel heights
+const MINIMIZED_HEIGHT = 80;
+const COLLAPSED_HEIGHT = 200;
+const EXPANDED_HEIGHT = 320;
 
 export default function TripTracker({ onTripComplete }) {
   const { theme, isDarkMode } = useTheme();
@@ -35,6 +43,10 @@ export default function TripTracker({ onTripComplete }) {
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState(null);
+  const [panelState, setPanelState] = useState('collapsed'); // 'minimized', 'collapsed', 'expanded'
+
+  // Animated value for panel
+  const panelAnimation = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
 
   const transportModes = [
     { id: 'auto-detect', name: 'Auto Detect', icon: 'analytics', color: '#8B5CF6' },
@@ -44,6 +56,56 @@ export default function TripTracker({ onTripComplete }) {
     { id: 'train', name: 'Train', icon: 'train', color: '#6366F1' },
     { id: 'car', name: 'Car', icon: 'car', color: '#EF4444' },
   ];
+
+  // Create pan responder for drag gestures
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Calculate new height based on drag
+        const currentHeight = 
+          panelState === 'minimized' ? MINIMIZED_HEIGHT :
+          panelState === 'collapsed' ? COLLAPSED_HEIGHT :
+          EXPANDED_HEIGHT;
+        
+        const newHeight = Math.max(
+          MINIMIZED_HEIGHT,
+          Math.min(EXPANDED_HEIGHT, currentHeight - gestureState.dy)
+        );
+        
+        panelAnimation.setValue(newHeight);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const velocity = gestureState.vy;
+        const currentHeight = panelAnimation._value;
+        
+        let targetState;
+        let targetHeight;
+        
+        // Determine target based on position and velocity
+        if (velocity > 0.5 || currentHeight < MINIMIZED_HEIGHT + 30) {
+          targetState = 'minimized';
+          targetHeight = MINIMIZED_HEIGHT;
+        } else if (velocity < -0.5 || currentHeight > EXPANDED_HEIGHT - 30) {
+          targetState = 'expanded';
+          targetHeight = EXPANDED_HEIGHT;
+        } else if (currentHeight < (COLLAPSED_HEIGHT + MINIMIZED_HEIGHT) / 2) {
+          targetState = 'minimized';
+          targetHeight = MINIMIZED_HEIGHT;
+        } else if (currentHeight > (COLLAPSED_HEIGHT + EXPANDED_HEIGHT) / 2) {
+          targetState = 'expanded';
+          targetHeight = EXPANDED_HEIGHT;
+        } else {
+          targetState = 'collapsed';
+          targetHeight = COLLAPSED_HEIGHT;
+        }
+        
+        animatePanel(targetHeight, targetState);
+      },
+    })
+  ).current;
 
   useEffect(() => {
     console.log('TripTracker mounted');
@@ -67,85 +129,101 @@ export default function TripTracker({ onTripComplete }) {
     return () => clearInterval(interval);
   }, [isTracking]);
 
+  const animatePanel = (toHeight, state) => {
+    setPanelState(state);
+    Animated.spring(panelAnimation, {
+      toValue: toHeight,
+      useNativeDriver: false,
+      friction: 8,
+    }).start();
+  };
+
   const initializeLocation = async () => {
     try {
       console.log('Requesting location permissions...');
       
-      // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       setPermissionStatus(status);
       console.log('Permission status:', status);
       
       if (status !== 'granted') {
         Alert.alert(
-          'Permission Denied',
-          'Location permission is required to track your trips. Please enable it in settings.',
+          'Location Permission Required',
+          'Please enable location services to use trip tracking.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => {
-              // Open app settings
-              if (Platform.OS === 'ios') {
-                Linking.openURL('app-settings:');
-              } else {
-                Linking.openSettings();
+            { 
+              text: 'Open Settings', 
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
               }
-            }}
+            }
           ]
         );
-        // Set a default location for demo purposes
-        setDefaultLocation();
         return;
       }
 
-      // Get current location with timeout
       console.log('Getting current location...');
       
       try {
-        const location = await Promise.race([
-          Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            mayShowUserSettingsDialog: true,
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Location timeout')), 10000)
-          )
-        ]);
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeout: 10000,
+        });
         
-        console.log('Location obtained:', location.coords);
-        
-        const initialRegion = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        };
-        
-        setCurrentLocation(initialRegion);
-        
-        // Center map on current location when ready
-        if (mapRef.current && isMapReady) {
-          mapRef.current.animateToRegion(initialRegion, 1000);
+        if (location && location.coords) {
+          console.log('Got location:', location.coords.latitude, location.coords.longitude);
+          
+          const initialRegion = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          };
+          
+          setCurrentLocation(initialRegion);
+          
+          if (mapRef.current && isMapReady) {
+            setTimeout(() => {
+              mapRef.current.animateToRegion(initialRegion, 1000);
+            }, 100);
+          }
         }
-      } catch (locationError) {
-        console.log('Could not get current location, using default');
-        setDefaultLocation();
+      } catch (error) {
+        console.error('Error getting current location:', error);
+        
+        try {
+          const lastLocation = await Location.getLastKnownPositionAsync({});
+          
+          if (lastLocation && lastLocation.coords) {
+            console.log('Using last known location');
+            const lastRegion = {
+              latitude: lastLocation.coords.latitude,
+              longitude: lastLocation.coords.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            };
+            
+            setCurrentLocation(lastRegion);
+          } else {
+            console.log('No last known location available');
+            Alert.alert(
+              'Location Error',
+              'Unable to get your location. Please ensure GPS is enabled and try again.'
+            );
+          }
+        } catch (lastLocationError) {
+          console.error('Error getting last location:', lastLocationError);
+        }
       }
     } catch (error) {
       console.error('Location initialization error:', error);
-      setDefaultLocation();
+      Alert.alert('Error', 'Failed to initialize location services');
     }
-  };
-
-  const setDefaultLocation = () => {
-    // Set default location (Chandigarh, India based on your user location)
-    const defaultRegion = {
-      latitude: 30.7333,
-      longitude: 76.7794,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    };
-    setCurrentLocation(defaultRegion);
-    console.log('Using default location:', defaultRegion);
   };
 
   const startLocationTracking = async () => {
@@ -160,38 +238,30 @@ export default function TripTracker({ onTripComplete }) {
       const subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 2000, // Update every 2 seconds
-          distanceInterval: 10, // Or every 10 meters
+          timeInterval: 2000,
+          distanceInterval: 10,
         },
         (location) => {
-          console.log('Location update:', {
-            lat: location.coords.latitude,
-            lng: location.coords.longitude,
-            speed: location.coords.speed,
-          });
+          console.log('Location update:', location.coords.latitude, location.coords.longitude);
           
           const newCoord = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           };
           
-          // Update current location
           setCurrentLocation({
             ...newCoord,
             latitudeDelta: 0.005,
             longitudeDelta: 0.005,
           });
           
-          // Update speed
           if (location.coords.speed) {
-            setCurrentSpeed(location.coords.speed * 3.6); // Convert m/s to km/h
+            setCurrentSpeed(location.coords.speed * 3.6);
           }
           
-          // Add to route
           setRouteCoordinates(prev => {
             const newRoute = [...prev, newCoord];
             
-            // Calculate total distance
             if (prev.length > 0) {
               const lastCoord = prev[prev.length - 1];
               const distance = calculateDistance(lastCoord, newCoord);
@@ -201,7 +271,6 @@ export default function TripTracker({ onTripComplete }) {
             return newRoute;
           });
           
-          // Update map to follow user
           if (mapRef.current && isMapReady) {
             mapRef.current.animateToRegion({
               ...newCoord,
@@ -221,7 +290,7 @@ export default function TripTracker({ onTripComplete }) {
   };
 
   const calculateDistance = (coord1, coord2) => {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = deg2rad(coord2.latitude - coord1.latitude);
     const dLon = deg2rad(coord2.longitude - coord1.longitude);
     const a =
@@ -246,9 +315,11 @@ export default function TripTracker({ onTripComplete }) {
       setElapsedTime(0);
       setTotalDistance(0);
       setRouteCoordinates([]);
-      setShowModeSelector(false); // Close the modal
+      setShowModeSelector(false);
       
-      // Start location tracking
+      // Minimize panel when tracking starts
+      animatePanel(MINIMIZED_HEIGHT, 'minimized');
+      
       await startLocationTracking();
       
       Alert.alert('Tracking Started', `Tracking your ${selectedMode} trip`);
@@ -263,16 +334,13 @@ export default function TripTracker({ onTripComplete }) {
     try {
       console.log('Stopping trip...');
       
-      // Stop location subscription
       if (locationSubscription) {
         locationSubscription.remove();
         setLocationSubscription(null);
       }
       
-      // Calculate emissions
       const emissions = calculateEmissions(totalDistance, selectedMode);
       
-      // Prepare trip data
       const completedTrip = {
         mode: selectedMode === 'auto-detect' ? detectModeFromSpeed() : selectedMode,
         totalDistance: totalDistance,
@@ -284,7 +352,9 @@ export default function TripTracker({ onTripComplete }) {
       
       setIsTracking(false);
       
-      // Show summary
+      // Expand panel to show results
+      animatePanel(COLLAPSED_HEIGHT, 'collapsed');
+      
       Alert.alert(
         '🎉 Trip Complete!',
         `Distance: ${completedTrip.totalDistance.toFixed(2)} km\n` +
@@ -295,7 +365,6 @@ export default function TripTracker({ onTripComplete }) {
           {
             text: 'Save',
             onPress: async () => {
-              // Save to database
               const { data: { user } } = await supabase.auth.getUser();
               if (user) {
                 await supabase.from('emissions').insert({
@@ -374,7 +443,6 @@ export default function TripTracker({ onTripComplete }) {
     return [];
   };
 
-  // Loading state
   if (!currentLocation) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
@@ -382,29 +450,38 @@ export default function TripTracker({ onTripComplete }) {
         <Text style={[styles.loadingText, { color: theme.primaryText }]}>
           Getting your location...
         </Text>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={initializeLocation}
+        >
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Map View */}
+      {/* Map View - Full Screen */}
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
-        style={styles.map}
+        style={StyleSheet.absoluteFillObject}
         initialRegion={currentLocation}
-        region={currentLocation}
         showsUserLocation={true}
-        showsMyLocationButton={true}
+        showsMyLocationButton={panelState !== 'expanded'}
         showsCompass={true}
         customMapStyle={getMapStyle()}
         onMapReady={() => {
           console.log('Map ready');
           setIsMapReady(true);
+          if (currentLocation && mapRef.current) {
+            setTimeout(() => {
+              mapRef.current.animateToRegion(currentLocation, 1000);
+            }, 500);
+          }
         }}
       >
-        {/* Route polyline */}
         {routeCoordinates.length > 1 && (
           <Polyline
             coordinates={routeCoordinates}
@@ -413,7 +490,6 @@ export default function TripTracker({ onTripComplete }) {
           />
         )}
         
-        {/* Start marker */}
         {routeCoordinates.length > 0 && (
           <Marker
             coordinate={routeCoordinates[0]}
@@ -423,80 +499,129 @@ export default function TripTracker({ onTripComplete }) {
         )}
       </MapView>
 
-      {/* Info Panel */}
-      <View style={[styles.infoPanel, { 
-        backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.95)' : 'rgba(255, 255, 255, 0.95)' 
-      }]}>
-        {isTracking ? (
-          <View style={styles.trackingInfo}>
-            <Text style={[styles.trackingTitle, { color: theme.primaryText }]}>
-              Tracking: {selectedMode}
-            </Text>
-            
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Ionicons name="time-outline" size={20} color={theme.secondaryText} />
-                <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                  {formatTime(elapsedTime)}
-                </Text>
-              </View>
-              
-              <View style={styles.statItem}>
-                <Ionicons name="navigate-outline" size={20} color={theme.secondaryText} />
-                <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                  {totalDistance.toFixed(2)} km
-                </Text>
-              </View>
-              
-              <View style={styles.statItem}>
-                <Ionicons name="speedometer-outline" size={20} color={theme.secondaryText} />
-                <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                  {currentSpeed.toFixed(1)} km/h
-                </Text>
-              </View>
+      {/* Bottom Panel with Gesture Support */}
+      <Animated.View 
+        style={[
+          styles.bottomPanel,
+          { 
+            backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+            height: panelAnimation,
+          }
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {/* Drag Handle */}
+        <View style={styles.dragHandle}>
+          <View style={styles.dragIndicator} />
+        </View>
+
+        {/* Panel Content */}
+        <View style={styles.panelContent}>
+          {panelState === 'minimized' ? (
+            // Minimized View
+            <View style={styles.minimizedContent}>
+              {isTracking ? (
+                <View style={styles.minimizedStats}>
+                  <View style={styles.minimizedStatsLeft}>
+                    <Text style={[styles.minimizedText, { color: theme.primaryText }]}>
+                      {totalDistance.toFixed(1)} km
+                    </Text>
+                    <Text style={[styles.minimizedText, { color: theme.secondaryText }]}>
+                      {formatTime(elapsedTime)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={handleStopTracking}>
+                    <Ionicons name="stop-circle" size={40} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.minimizedStart}
+                  onPress={() => animatePanel(COLLAPSED_HEIGHT, 'collapsed')}
+                >
+                  <Ionicons name="play-circle" size={40} color={theme.accentText} />
+                  <Text style={[styles.minimizedText, { color: theme.primaryText, marginLeft: 10 }]}>
+                    Start Journey
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
-            
-            <TouchableOpacity
-              style={[styles.stopButton, { backgroundColor: '#EF4444' }]}
-              onPress={handleStopTracking}
-            >
-              <Ionicons name="stop" size={24} color="#FFFFFF" />
-              <Text style={styles.buttonText}>Stop Tracking</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.startPanel}>
-            <Text style={[styles.startTitle, { color: theme.primaryText }]}>
-              Start Your Journey
-            </Text>
-            
-            <TouchableOpacity
-              style={[styles.modeSelector, { 
-                backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider 
-              }]}
-              onPress={() => setShowModeSelector(true)}
-            >
-              <Ionicons 
-                name={transportModes.find(m => m.id === selectedMode)?.icon} 
-                size={24} 
-                color={transportModes.find(m => m.id === selectedMode)?.color} 
-              />
-              <Text style={[styles.modeSelectorText, { color: theme.primaryText }]}>
-                {transportModes.find(m => m.id === selectedMode)?.name}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color={theme.secondaryText} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.startButton, { backgroundColor: theme.accentText }]}
-              onPress={handleStartTracking}
-            >
-              <Ionicons name="play" size={24} color="#FFFFFF" />
-              <Text style={styles.buttonText}>Start Tracking</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+          ) : (
+            // Expanded/Collapsed View
+            <>
+              {isTracking ? (
+                <View style={styles.trackingInfo}>
+                  <Text style={[styles.trackingTitle, { color: theme.primaryText }]}>
+                    Tracking: {selectedMode}
+                  </Text>
+                  
+                  <View style={styles.statsRow}>
+                    <View style={styles.statItem}>
+                      <Ionicons name="time-outline" size={20} color={theme.secondaryText} />
+                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                        {formatTime(elapsedTime)}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.statItem}>
+                      <Ionicons name="navigate-outline" size={20} color={theme.secondaryText} />
+                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                        {totalDistance.toFixed(2)} km
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.statItem}>
+                      <Ionicons name="speedometer-outline" size={20} color={theme.secondaryText} />
+                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                        {currentSpeed.toFixed(1)} km/h
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <TouchableOpacity
+                    style={[styles.stopButton, { backgroundColor: '#EF4444' }]}
+                    onPress={handleStopTracking}
+                  >
+                    <Ionicons name="stop" size={24} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Stop Tracking</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.startPanel}>
+                  <Text style={[styles.startTitle, { color: theme.primaryText }]}>
+                    Start Your Journey
+                  </Text>
+                  
+                  <TouchableOpacity
+                    style={[styles.modeSelector, { 
+                      backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider 
+                    }]}
+                    onPress={() => setShowModeSelector(true)}
+                  >
+                    <Ionicons 
+                      name={transportModes.find(m => m.id === selectedMode)?.icon} 
+                      size={24} 
+                      color={transportModes.find(m => m.id === selectedMode)?.color} 
+                    />
+                    <Text style={[styles.modeSelectorText, { color: theme.primaryText }]}>
+                      {transportModes.find(m => m.id === selectedMode)?.name}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color={theme.secondaryText} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.startButton, { backgroundColor: theme.accentText }]}
+                    onPress={handleStartTracking}
+                  >
+                    <Ionicons name="play" size={24} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Start Tracking</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+        </View>
+      </Animated.View>
 
       {/* Transport Mode Modal */}
       <Modal
@@ -510,10 +635,7 @@ export default function TripTracker({ onTripComplete }) {
           onPress={() => setShowModeSelector(false)}
           activeOpacity={1}
         >
-          <TouchableOpacity 
-            style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}
-            activeOpacity={1}
-          >
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
                 Select Transport Mode
@@ -552,7 +674,7 @@ export default function TripTracker({ onTripComplete }) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
     </View>
@@ -562,7 +684,7 @@ export default function TripTracker({ onTripComplete }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    height: height * 0.5, // Take half screen height
+    height: height * 0.5,
   },
   loadingContainer: {
     justifyContent: 'center',
@@ -572,17 +694,23 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
   },
-  map: {
-    flex: 1,
-    width: width,
-    height: '100%',
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#10B981',
+    borderRadius: 20,
   },
-  infoPanel: {
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bottomPanel: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 20,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     shadowColor: '#000',
@@ -590,6 +718,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 10,
+    overflow: 'hidden',
+  },
+  dragHandle: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  dragIndicator: {
+    width: 40,
+    height: 4,
+    backgroundColor: 'rgba(156, 163, 175, 0.5)',
+    borderRadius: 2,
+  },
+  panelContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  minimizedContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  minimizedStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  minimizedStatsLeft: {
+    flexDirection: 'column',
+  },
+  minimizedStart: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minimizedText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   trackingInfo: {
     alignItems: 'center',
