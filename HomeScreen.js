@@ -35,32 +35,67 @@ const getUserProfile = async (userId) => {
   }
 };
 
+// Replace the getUserAchievements function in HomeScreen.js with this fixed version:
+
 const getUserAchievements = async (userId) => {
   try {
+    // First, update the user's streak and check for new achievements
+    await supabase.rpc('update_user_streak_and_achievements', { p_user_id: userId });
+    
+    // Then fetch the achievements using the view
     const { data, error } = await supabase
-      .from('user_achievements')
-      .select(`
-        id,
-        earned_at,
-        tokens_earned,
-        achievement_definitions (
-          name,
-          description,
-          emoji,
-          category
-        )
-      `)
+      .from('user_achievements_view')
+      .select('*')
       .eq('user_id', userId)
       .order('earned_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error loading achievements:', error);
+      
+      // Try alternative query if view doesn't exist
+      const { data: altData, error: altError } = await supabase
+        .from('user_achievements')
+        .select(`
+          id,
+          earned_at,
+          tokens_earned,
+          achievement_id
+        `)
+        .eq('user_id', userId);
+      
+      if (!altError && altData) {
+        // Fetch achievement details separately
+        const achievementIds = altData.map(a => a.achievement_id);
+        const { data: definitions } = await supabase
+          .from('achievement_definitions')
+          .select('*')
+          .in('id', achievementIds);
+        
+        const achievements = altData.map(ua => {
+          const def = definitions?.find(d => d.id === ua.achievement_id) || {};
+          return {
+            id: ua.id,
+            name: def.name || 'Achievement',
+            description: def.description || '',
+            emoji: def.emoji || '🏆',
+            category: def.category || 'general',
+            earnedAt: ua.earned_at,
+            tokensEarned: ua.tokens_earned
+          };
+        });
+        
+        return { achievements, error: null };
+      }
+      
+      throw error;
+    }
     
     const achievements = data?.map(ua => ({
       id: ua.id,
-      name: ua.achievement_definitions?.name || 'Achievement',
-      description: ua.achievement_definitions?.description || '',
-      emoji: ua.achievement_definitions?.emoji || '🏆',
-      category: ua.achievement_definitions?.category || 'general',
+      name: ua.name || 'Achievement',
+      description: ua.description || '',
+      emoji: ua.emoji || '🏆',
+      category: ua.category || 'general',
       earnedAt: ua.earned_at,
       tokensEarned: ua.tokens_earned
     })) || [];
@@ -68,13 +103,45 @@ const getUserAchievements = async (userId) => {
     return { achievements, error: null };
   } catch (error) {
     console.error('Error loading achievements:', error);
+    
+    // Return empty array instead of sample data
     return { 
-      achievements: [
-        { name: 'First Step', emoji: '🌱', description: 'Started tracking' },
-        { name: 'Week Warrior', emoji: '🔥', description: '7 day streak' },
-      ], 
+      achievements: [], 
       error 
     };
+  }
+};
+
+// Also add this function to manually trigger streak update
+const refreshStreakAndAchievements = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    // Call the RPC function to update streak
+    const { data, error } = await supabase.rpc('update_user_streak_and_achievements', {
+      p_user_id: user.id
+    });
+    
+    if (error) {
+      console.error('Error updating streak:', error);
+      return;
+    }
+    
+    // Reload user profile to get updated streak
+    const userProfile = await getUserProfile(user.id);
+    if (userProfile) {
+      setStreak(userProfile.streak_count || 0);
+      setTokens(userProfile.eco_points || 0);
+    }
+    
+    // Reload achievements
+    const achievementsResult = await getUserAchievements(user.id);
+    if (achievementsResult.achievements) {
+      setAchievements(achievementsResult.achievements);
+    }
+  } catch (error) {
+    console.error('Error refreshing streak and achievements:', error);
   }
 };
 
