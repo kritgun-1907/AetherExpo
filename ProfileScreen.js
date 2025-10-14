@@ -14,17 +14,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase, signOut } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
-import { useCarbonStore } from './src/store/carbonStore'; // Add this import
-import FriendsList from './src/components/social/FriendsList'; 
 import { useEmissions } from './src/hooks/useEmissions';
 import AvatarUpload from './src/components/profile/AvatarUpload';
-
-
+import FriendsList from './src/components/social/FriendsList';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
-export default function ProfileScreen({ navigation }) { // Add navigation prop
+export default function ProfileScreen({ navigation }) {
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { emissions, loadEmissions } = useEmissions();
   
   // Local state for profile data
   const [user, setUser] = useState(null);
@@ -36,7 +34,7 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
   const [tokens, setTokens] = useState(0);
   const [achievements, setAchievements] = useState(0);
   const [isPremium, setIsPremium] = useState(false);
-  const [premiumModalVisible, setPremiumModalVisible] = useState(false); // Add premium modal state
+  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [friendsModalVisible, setFriendsModalVisible] = useState(false);
   const [profile, setProfile] = useState(null);
   
@@ -48,7 +46,25 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
     loadUserData();
     loadEmissionData();
     checkPremiumStatus();
-  }, []);
+    
+    // Subscribe to real-time updates
+    const subscription = supabase
+      .channel('profile_emissions')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'emissions',
+        filter: `user_id=eq.${user?.id}`,
+      }, () => {
+        console.log('Emissions updated, reloading...');
+        loadEmissionData();
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [user?.id]);
 
   const loadUserData = async () => {
     try {
@@ -56,14 +72,25 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
       if (user) {
         setUser(user);
         const { data: profileData } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
       
-      if (profileData) {
-        setProfile(profileData);
-      }
+        if (profileData) {
+          setProfile(profileData);
+          setStreak(profileData.streak_count || 0);
+          setTokens(profileData.eco_points || 0);
+        }
+        
+        // Load achievements count
+        const { data: achievementsData } = await supabase
+          .from('user_achievements')
+          .select('id')
+          .eq('user_id', user.id);
+        
+        setAchievements(achievementsData?.length || 0);
+        
         console.log('Profile user data loaded:', user.email);
       }
     } catch (error) {
@@ -127,47 +154,18 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
         const allTimeTotal = allTimeData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
         setAllTimeEmissions(allTimeTotal);
         
-        // Calculate streak (consecutive days with emissions)
-        const { data: recentData } = await supabase
-          .from('emissions')
-          .select('created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(30);
-        
-        let streakCount = 0;
-        const uniqueDays = [...new Set(recentData?.map(item => 
-          new Date(item.created_at).toDateString()) || [])];
-        
-        for (let i = 0; i < uniqueDays.length; i++) {
-          const checkDate = new Date();
-          checkDate.setDate(checkDate.getDate() - i);
-          
-          if (uniqueDays.includes(checkDate.toDateString())) {
-            streakCount++;
-          } else {
-            break;
-          }
-        }
-        setStreak(streakCount);
-        
-        // Set tokens and achievements
-        setTokens(30);
-        setAchievements(2);
+        console.log('📊 Emission data loaded:', {
+          daily: todayTotal,
+          weekly: weekTotal,
+          monthly: monthTotal,
+          allTime: allTimeTotal
+        });
       }
     } catch (error) {
       console.error('Error loading emission data:', error);
-      // Fallback to local storage or Zustand store
-      try {
-        const { dailyEmissions: localDaily } = useCarbonStore.getState();
-        setDailyEmissions(localDaily);
-      } catch (storeError) {
-        console.error('Error accessing carbon store:', storeError);
-      }
     }
   };
 
-  // Add premium status check
   const checkPremiumStatus = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -187,94 +185,86 @@ export default function ProfileScreen({ navigation }) { // Add navigation prop
     }
   };
 
-  // Add navigation to Gift Voucher screen
   const navigateToGiftVouchers = () => {
     navigation.navigate('GiftVoucher');
   };
 
-  // Add navigation to Carbon Offset screen
   const navigateToCarbonOffsets = () => {
     navigation.navigate('CarbonOffset');
   };
 
-  // Add premium modal toggle
   const togglePremiumModal = () => {
     setPremiumModalVisible(!premiumModalVisible);
   };
 
-  // Add premium upgrade handler
-// Add this updated handlePremiumUpgrade function to your ProfileScreen.js
-
-const handlePremiumUpgrade = (plan) => {
-  const planDetails = {
-    basic: { 
-      price: 4.99, 
-      name: 'Basic', 
-      features: [
-        'Unlimited bank connections',
-        'Advanced analytics',
-        'Monthly offset recommendations',
-        'Basic gift vouchers',
-        'Email support'
-      ]
-    },
-    premium: { 
-      price: 9.99, 
-      name: 'Premium', 
-      features: [
-        'All Basic features',
-        'Real-time carbon tracking',
-        'Premium gift vouchers',
-        'Custom offset portfolios',
-        'Carbon impact reports',
-        'Unlimited friends',
-        'Priority support',
-        'Early access to features'
-      ]
-    },
-    enterprise: { 
-      price: 19.99, 
-      name: 'Enterprise',
-      features: [
-        'All Premium features',
-        'Team tracking (50 users)',
-        'Corporate offset programs',
-        'API access',
-        'Custom branding',
-        'Dedicated account manager',
-        '24/7 priority support'
-      ]
-    }
-  };
-
-  const selectedPlan = planDetails[plan.toLowerCase()]; // Ensure lowercase
-  
-  if (!selectedPlan) {
-    Alert.alert('Error', 'Invalid plan selected');
-    return;
-  }
-  
-  Alert.alert(
-    `Upgrade to ${selectedPlan.name}`,
-    `Start your 7-day free trial, then $${selectedPlan.price}/month.\n\nYou'll get:\n${selectedPlan.features.map(f => `• ${f}`).join('\n')}`,
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Continue to Payment', 
-        onPress: () => {
-          setPremiumModalVisible(false);
-          // Navigate to payment screen with correct parameters
-          navigation.navigate('PaymentScreen', { 
-            plan: plan.toLowerCase(), // Ensure lowercase
-            price: selectedPlan.price,
-            planName: selectedPlan.name
-          });
-        }
+  const handlePremiumUpgrade = (plan) => {
+    const planDetails = {
+      basic: { 
+        price: 4.99, 
+        name: 'Basic', 
+        features: [
+          'Unlimited bank connections',
+          'Advanced analytics',
+          'Monthly offset recommendations',
+          'Basic gift vouchers',
+          'Email support'
+        ]
+      },
+      premium: { 
+        price: 9.99, 
+        name: 'Premium', 
+        features: [
+          'All Basic features',
+          'Real-time carbon tracking',
+          'Premium gift vouchers',
+          'Custom offset portfolios',
+          'Carbon impact reports',
+          'Unlimited friends',
+          'Priority support',
+          'Early access to features'
+        ]
+      },
+      enterprise: { 
+        price: 19.99, 
+        name: 'Enterprise',
+        features: [
+          'All Premium features',
+          'Team tracking (50 users)',
+          'Corporate offset programs',
+          'API access',
+          'Custom branding',
+          'Dedicated account manager',
+          '24/7 priority support'
+        ]
       }
-    ]
-  );
-};
+    };
 
+    const selectedPlan = planDetails[plan.toLowerCase()];
+    
+    if (!selectedPlan) {
+      Alert.alert('Error', 'Invalid plan selected');
+      return;
+    }
+    
+    Alert.alert(
+      `Upgrade to ${selectedPlan.name}`,
+      `Start your 7-day free trial, then $${selectedPlan.price}/month.\n\nYou'll get:\n${selectedPlan.features.map(f => `• ${f}`).join('\n')}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Continue to Payment', 
+          onPress: () => {
+            setPremiumModalVisible(false);
+            navigation.navigate('PaymentScreen', { 
+              plan: plan.toLowerCase(),
+              price: selectedPlan.price,
+              planName: selectedPlan.name
+            });
+          }
+        }
+      ]
+    );
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -336,7 +326,7 @@ const handlePremiumUpgrade = (plan) => {
   };
 
   const getUserName = () => {
-    return user?.email?.split('@')[0] || 'User';
+    return profile?.full_name || user?.email?.split('@')[0] || 'User';
   };
 
   if (isLoading) {
@@ -347,7 +337,6 @@ const handlePremiumUpgrade = (plan) => {
     );
   }
 
-  // Create dynamic styles based on theme
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
   return (
@@ -358,7 +347,6 @@ const handlePremiumUpgrade = (plan) => {
         translucent 
       />
       
-      {/* Background Image - only show in dark mode */}
       {isDarkMode && (
         <>
           <ImageBackground 
@@ -370,7 +358,6 @@ const handlePremiumUpgrade = (plan) => {
         </>
       )}
 
-      {/* Content */}
       <ScrollView 
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={true}
@@ -379,13 +366,13 @@ const handlePremiumUpgrade = (plan) => {
       >
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-         <AvatarUpload 
-          userId={user?.id}
-          currentAvatarUrl={profile?.avatar_url}
-          onAvatarUpdated={(newUrl) => {
-          setProfile(prev => ({ ...prev, avatar_url: newUrl }));
-             }}
-                  />
+          <AvatarUpload 
+            userId={user?.id}
+            currentAvatarUrl={profile?.avatar_url}
+            onAvatarUpdated={(newUrl) => {
+              setProfile(prev => ({ ...prev, avatar_url: newUrl }));
+            }}
+          />
           <Text style={[styles.userName, { color: theme.primaryText }]}>{getUserName()}</Text>
           <Text style={[styles.userEmail, { color: theme.secondaryText }]}>{user?.email}</Text>
           <View style={[dynamicStyles.badgeContainer]}>
@@ -442,11 +429,10 @@ const handlePremiumUpgrade = (plan) => {
           </View>
         </View>
 
-        {/* NEW: Rewards & Features Section */}
+        {/* Rewards & Features Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>Rewards & Features</Text>
           
-          {/* Gift Voucher Button */}
           <TouchableOpacity 
             style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.8)' : '#10B981' }]} 
             onPress={navigateToGiftVouchers}
@@ -461,7 +447,6 @@ const handlePremiumUpgrade = (plan) => {
             <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
           </TouchableOpacity>
 
-          {/* Carbon Offset Button */}
           <TouchableOpacity 
             style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(34, 197, 94, 0.8)' : '#059669' }]} 
             onPress={navigateToCarbonOffsets}
@@ -476,7 +461,6 @@ const handlePremiumUpgrade = (plan) => {
             <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
           </TouchableOpacity>
 
-          {/* Premium Upgrade Button */}
           {!isPremium && (
             <TouchableOpacity 
               style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.8)' : '#7C3AED' }]} 
@@ -492,23 +476,21 @@ const handlePremiumUpgrade = (plan) => {
               <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity 
+            style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(139, 92, 246, 0.8)' : '#8B5CF6' }]} 
+            onPress={() => setFriendsModalVisible(true)}
+          >
+            <Text style={styles.featureIcon}>👥</Text>
+            <View style={styles.featureTextContainer}>
+              <Text style={[styles.featureTitle, { color: theme.buttonText }]}>Friends & Social</Text>
+              <Text style={[styles.featureSubtitle, { color: theme.buttonText, opacity: 0.9 }]}>
+                Connect with friends and compare progress
+              </Text>
+            </View>
+            <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Friends & Social Button */}
-<TouchableOpacity 
-  style={[dynamicStyles.featureButton, { backgroundColor: isDarkMode ? 'rgba(139, 92, 246, 0.8)' : '#8B5CF6' }]} 
-  onPress={() => setFriendsModalVisible(true)}
->
-  <Text style={styles.featureIcon}>👥</Text>
-  <View style={styles.featureTextContainer}>
-    <Text style={[styles.featureTitle, { color: theme.buttonText }]}>Friends & Social</Text>
-    <Text style={[styles.featureSubtitle, { color: theme.buttonText, opacity: 0.9 }]}>
-      Connect with friends and compare progress
-    </Text>
-  </View>
-  <Text style={[styles.featureArrow, { color: theme.buttonText }]}>→</Text>
-</TouchableOpacity>
-
 
         {/* Settings Section */}
         <View style={styles.section}>
@@ -535,301 +517,197 @@ const handlePremiumUpgrade = (plan) => {
           </View>
         </View>
 
-        {/* Export Data Button */}
         <TouchableOpacity style={[dynamicStyles.exportButton]} onPress={handleExportData}>
           <Text style={styles.exportIcon}>📊</Text>
           <Text style={[styles.exportText, { color: theme.buttonText }]}>Export My Data</Text>
         </TouchableOpacity>
 
-        {/* Sign Out Button */}
         <TouchableOpacity style={[dynamicStyles.signOutButton]} onPress={handleSignOut}>
           <Text style={[styles.signOutText, { color: theme.buttonText }]}>Sign Out</Text>
         </TouchableOpacity>
 
-        {/* Bottom spacing */}
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
       {/* Premium Subscription Modal */}
-   {/* Premium Subscription Modal - UPDATED */}
-<Modal
-  animationType="slide"
-  transparent={true}
-  visible={premiumModalVisible}
-  onRequestClose={togglePremiumModal}
->
-  <View style={styles.modalOverlay}>
-    <View style={[styles.modalContent, {
-      backgroundColor: theme.cardBackground,
-      borderColor: isDarkMode ? theme.border : 'transparent',
-    }]}>
-      <View style={styles.modalHeader}>
-        <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
-          👑 Upgrade to Premium
-        </Text>
-        <TouchableOpacity onPress={togglePremiumModal} style={styles.closeButton}>
-          <Text style={[styles.closeButtonText, { color: theme.secondaryText }]}>✕</Text>
-        </TouchableOpacity>
-      </View>
-      
-      <Text style={[styles.modalSubtitle, { color: theme.secondaryText }]}>
-        Unlock advanced features and maximize your carbon impact
-      </Text>
-
-      {/* Premium Plans */}
-      <ScrollView 
-        style={styles.plansScrollContainer}
-        showsVerticalScrollIndicator={false}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={premiumModalVisible}
+        onRequestClose={togglePremiumModal}
       >
-        {/* Basic Plan */}
-        <TouchableOpacity 
-          style={[styles.planCard, {
-            backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
-            borderColor: isDarkMode ? 'rgba(59, 130, 246, 0.3)' : '#3B82F6',
-          }]}
-          onPress={() => handlePremiumUpgrade('basic')}
-        >
-          <View style={styles.planHeader}>
-            <Text style={[styles.planName, { color: theme.primaryText }]}>Basic</Text>
-            <View style={[styles.planPriceBadge, { backgroundColor: '#3B82F6' }]}>
-              <Text style={styles.planPriceText}>$4.99</Text>
-              <Text style={styles.planPeriodText}>/month</Text>
-            </View>
-          </View>
-          
-          <View style={styles.planFeatures}>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Unlimited bank connections
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, {
+            backgroundColor: theme.cardBackground,
+            borderColor: isDarkMode ? theme.border : 'transparent',
+          }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
+                👑 Upgrade to Premium
               </Text>
+              <TouchableOpacity onPress={togglePremiumModal} style={styles.closeButton}>
+                <Text style={[styles.closeButtonText, { color: theme.secondaryText }]}>✕</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Advanced analytics dashboard
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Monthly offset recommendations
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Basic gift vouchers ($5-$25)
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Email support
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.planBenefitBadge}>
-            <Text style={styles.planBenefitText}>💰 Save $5/month vs Free</Text>
-          </View>
-        </TouchableOpacity>
+            
+            <Text style={[styles.modalSubtitle, { color: theme.secondaryText }]}>
+              Unlock advanced features and maximize your carbon impact
+            </Text>
 
-        {/* Premium Plan - Most Popular */}
-        <TouchableOpacity 
-          style={[styles.planCard, styles.premiumPlan, {
-            backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.3)' : '#F3E8FF',
-            borderColor: isDarkMode ? 'rgba(147, 51, 234, 0.4)' : '#7C3AED',
-          }]}
-          onPress={() => handlePremiumUpgrade('premium')}
-        >
-          <View style={styles.popularBadge}>
-            <Text style={styles.popularText}>⭐ MOST POPULAR</Text>
-          </View>
-          
-          <View style={styles.planHeader}>
-            <Text style={[styles.planName, { color: theme.primaryText }]}>Premium</Text>
-            <View style={[styles.planPriceBadge, { backgroundColor: '#7C3AED' }]}>
-              <Text style={styles.planPriceText}>$9.99</Text>
-              <Text style={styles.planPeriodText}>/month</Text>
-            </View>
-          </View>
-          
-          <View style={styles.planFeatures}>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                <Text style={{ fontWeight: 'bold' }}>All Basic features</Text>
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Real-time carbon tracking
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Premium gift vouchers (up to $100)
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Custom offset portfolios
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Detailed carbon impact reports
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Unlimited friend connections
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Priority email & chat support
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Early access to new features
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.planBenefitBadge}>
-            <Text style={styles.planBenefitText}>🎁 Best Value - Save $20/year</Text>
-          </View>
-        </TouchableOpacity>
+            <ScrollView 
+              style={styles.plansScrollContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Basic Plan */}
+              <TouchableOpacity 
+                style={[styles.planCard, {
+                  backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
+                  borderColor: isDarkMode ? 'rgba(59, 130, 246, 0.3)' : '#3B82F6',
+                }]}
+                onPress={() => handlePremiumUpgrade('basic')}
+              >
+                <View style={styles.planHeader}>
+                  <Text style={[styles.planName, { color: theme.primaryText }]}>Basic</Text>
+                  <View style={[styles.planPriceBadge, { backgroundColor: '#3B82F6' }]}>
+                    <Text style={styles.planPriceText}>$4.99</Text>
+                    <Text style={styles.planPeriodText}>/month</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.planFeatures}>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      Unlimited bank connections
+                    </Text>
+                  </View>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      Advanced analytics dashboard
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
 
-        {/* Enterprise Plan */}
-        <TouchableOpacity 
-          style={[styles.planCard, {
-            backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
-            borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#10B981',
-          }]}
-          onPress={() => handlePremiumUpgrade('enterprise')}
-        >
-          <View style={styles.planHeader}>
-            <Text style={[styles.planName, { color: theme.primaryText }]}>Enterprise</Text>
-            <View style={[styles.planPriceBadge, { backgroundColor: '#10B981' }]}>
-              <Text style={styles.planPriceText}>$19.99</Text>
-              <Text style={styles.planPeriodText}>/month</Text>
-            </View>
-          </View>
-          
-          <View style={styles.planFeatures}>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                <Text style={{ fontWeight: 'bold' }}>All Premium features</Text>
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Team carbon tracking (up to 50 users)
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Corporate offset programs
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                API access for integrations
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Custom branding options
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                Dedicated account manager
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
-                24/7 priority support
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.planBenefitBadge}>
-            <Text style={styles.planBenefitText}>🏢 Perfect for businesses</Text>
-          </View>
-        </TouchableOpacity>
-      </ScrollView>
+              {/* Premium Plan */}
+              <TouchableOpacity 
+                style={[styles.planCard, styles.premiumPlan, {
+                  backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.3)' : '#F3E8FF',
+                  borderColor: isDarkMode ? 'rgba(147, 51, 234, 0.4)' : '#7C3AED',
+                }]}
+                onPress={() => handlePremiumUpgrade('premium')}
+              >
+                <View style={styles.popularBadge}>
+                  <Text style={styles.popularText}>⭐ MOST POPULAR</Text>
+                </View>
+                
+                <View style={styles.planHeader}>
+                  <Text style={[styles.planName, { color: theme.primaryText }]}>Premium</Text>
+                  <View style={[styles.planPriceBadge, { backgroundColor: '#7C3AED' }]}>
+                    <Text style={styles.planPriceText}>$9.99</Text>
+                    <Text style={styles.planPeriodText}>/month</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.planFeatures}>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      <Text style={{ fontWeight: 'bold' }}>All Basic features</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      Real-time carbon tracking
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
 
-      {/* Call to Action Button */}
-      <TouchableOpacity
-        style={[styles.upgradeButton, { backgroundColor: theme.accentText }]}
-        onPress={() => handlePremiumUpgrade('premium')}
-      >
-        <Text style={[styles.upgradeButtonText, { color: theme.buttonText }]}>
-          Start 7-Day Free Trial
-        </Text>
-      </TouchableOpacity>
+              {/* Enterprise Plan */}
+              <TouchableOpacity 
+                style={[styles.planCard, {
+                  backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
+                  borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#10B981',
+                }]}
+                onPress={() => handlePremiumUpgrade('enterprise')}
+              >
+                <View style={styles.planHeader}>
+                  <Text style={[styles.planName, { color: theme.primaryText }]}>Enterprise</Text>
+                  <View style={[styles.planPriceBadge, { backgroundColor: '#10B981' }]}>
+                    <Text style={styles.planPriceText}>$19.99</Text>
+                    <Text style={styles.planPeriodText}>/month</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.planFeatures}>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      <Text style={{ fontWeight: 'bold' }}>All Premium features</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.featureRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                    <Text style={[styles.planFeature, { color: theme.secondaryText }]}>
+                      Team tracking (up to 50 users)
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
 
-      <Text style={[styles.trialText, { color: theme.secondaryText }]}>
-        No credit card required • Cancel anytime
-      </Text>
-    </View>
-  </View>
-</Modal>
+            <TouchableOpacity
+              style={[styles.upgradeButton, { backgroundColor: theme.accentText }]}
+              onPress={() => handlePremiumUpgrade('premium')}
+            >
+              <Text style={[styles.upgradeButtonText, { color: theme.buttonText }]}>
+                Start 7-Day Free Trial
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.trialText, { color: theme.secondaryText }]}>
+              No credit card required • Cancel anytime
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       {/* Friends List Modal */}
-<Modal
-  animationType="slide"
-  transparent={false}
-  visible={friendsModalVisible}
-  onRequestClose={() => setFriendsModalVisible(false)}
->
-  <View style={[styles.modalFullScreen, { backgroundColor: theme.background }]}>
-    <View style={styles.modalNavHeader}>
-      <TouchableOpacity
-        onPress={() => setFriendsModalVisible(false)}
-        style={styles.modalBackButton}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={friendsModalVisible}
+        onRequestClose={() => setFriendsModalVisible(false)}
       >
-        <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
-      </TouchableOpacity>
-      <Text style={[styles.modalNavTitle, { color: theme.primaryText }]}>
-        Friends & Social
-      </Text>
-      <View style={{ width: 24 }} />
-    </View>
-    
-    <FriendsList 
-      onFriendSelect={(friend) => {
-        console.log('Friend selected:', friend);
-        // You can add navigation to friend's profile here
-        Alert.alert('Friend Profile', `${friend.full_name}'s profile`);
-      }}
-    />
-  </View>
-</Modal>
+        <View style={[styles.modalFullScreen, { backgroundColor: theme.background }]}>
+          <View style={styles.modalNavHeader}>
+            <TouchableOpacity
+              onPress={() => setFriendsModalVisible(false)}
+              style={styles.modalBackButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
+            </TouchableOpacity>
+            <Text style={[styles.modalNavTitle, { color: theme.primaryText }]}>
+              Friends & Social
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          
+          <FriendsList 
+            onFriendSelect={(friend) => {
+              console.log('Friend selected:', friend);
+              Alert.alert('Friend Profile', `${friend.full_name}'s profile`);
+            }}
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// Function to create dynamic styles based on theme
 const createDynamicStyles = (theme, isDarkMode) => ({
   avatar: {
     width: 80,
@@ -946,19 +824,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 60,
   },
-
-  // Profile Header
   profileHeader: {
     alignItems: 'center',
     paddingVertical: 30,
     paddingHorizontal: 20,
-  },
-  avatarContainer: {
-    marginBottom: 15,
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
   },
   userName: {
     fontSize: 24,
@@ -973,8 +842,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-
-  // Stats Section
   statsSection: {
     paddingHorizontal: 20,
     marginBottom: 30,
@@ -992,8 +859,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-
-  // Progress Section
   section: {
     paddingHorizontal: 20,
     marginBottom: 30,
@@ -1020,8 +885,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-
-  // Feature Buttons
   featureIcon: {
     fontSize: 24,
     marginRight: 15,
@@ -1041,14 +904,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-
-  // Settings
   settingText: {
     fontSize: 16,
     fontWeight: '500',
   },
-
-  // Export Button
   exportIcon: {
     fontSize: 20,
     marginRight: 10,
@@ -1057,14 +916,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-
-  // Sign Out Button
   signOutText: {
     fontSize: 16,
     fontWeight: 'bold',
   },
-
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1100,30 +955,27 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     lineHeight: 22,
   },
-
   modalFullScreen: {
-  flex: 1,
-},
-modalNavHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  paddingHorizontal: 20,
-  paddingTop: 60,
-  paddingBottom: 20,
-  borderBottomWidth: 1,
-  borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-},
-modalBackButton: {
-  padding: 5,
-},
-modalNavTitle: {
-  fontSize: 18,
-  fontWeight: '600',
-},
-
-  // Premium Plans
-  plansContainer: {
+    flex: 1,
+  },
+  modalNavHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  modalBackButton: {
+    padding: 5,
+  },
+  modalNavTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  plansScrollContainer: {
     marginBottom: 25,
   },
   planCard: {
@@ -1150,23 +1002,45 @@ modalNavTitle: {
     fontSize: 10,
     fontWeight: 'bold',
   },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   planName: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 5,
   },
-  planPrice: {
+  planPriceBadge: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  planPriceText: {
+    color: 'white',
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
+    fontWeight: 'bold',
+  },
+  planPeriodText: {
+    color: 'white',
+    fontSize: 12,
+    marginLeft: 2,
   },
   planFeatures: {
     marginTop: 10,
   },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
   planFeature: {
     fontSize: 14,
-    marginBottom: 6,
-    lineHeight: 20,
+    flex: 1,
   },
   upgradeButton: {
     borderRadius: 16,
@@ -1183,7 +1057,6 @@ modalNavTitle: {
     textAlign: 'center',
     fontStyle: 'italic',
   },
-
   bottomSpacing: {
     height: 100,
   },

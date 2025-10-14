@@ -12,13 +12,14 @@ import {
   ScrollView,
   FlatList,
 } from 'react-native';
-import { supabase, addEmission, testDatabaseConnection, debugEmissionInsert, incrementEcoPoints } from './src/api/supabase';
+import { supabase, addEmission, incrementEcoPoints } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import { useEmissions } from './src/hooks/useEmissions';
+import EmissionService from './src/services/EmissionService';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
-// Helper functions for backend integration
+// Helper functions
 const getUserProfile = async (userId) => {
   try {
     const { data, error } = await supabase
@@ -35,14 +36,10 @@ const getUserProfile = async (userId) => {
   }
 };
 
-// Replace the getUserAchievements function in HomeScreen.js with this fixed version:
-
 const getUserAchievements = async (userId) => {
   try {
-    // First, update the user's streak and check for new achievements
     await supabase.rpc('update_user_streak_and_achievements', { p_user_id: userId });
     
-    // Then fetch the achievements using the view
     const { data, error } = await supabase
       .from('user_achievements_view')
       .select('*')
@@ -50,21 +47,12 @@ const getUserAchievements = async (userId) => {
       .order('earned_at', { ascending: false });
 
     if (error) {
-      console.error('Error loading achievements:', error);
-      
-      // Try alternative query if view doesn't exist
       const { data: altData, error: altError } = await supabase
         .from('user_achievements')
-        .select(`
-          id,
-          earned_at,
-          tokens_earned,
-          achievement_id
-        `)
+        .select(`id, earned_at, tokens_earned, achievement_id`)
         .eq('user_id', userId);
       
       if (!altError && altData) {
-        // Fetch achievement details separately
         const achievementIds = altData.map(a => a.achievement_id);
         const { data: definitions } = await supabase
           .from('achievement_definitions')
@@ -86,7 +74,6 @@ const getUserAchievements = async (userId) => {
         
         return { achievements, error: null };
       }
-      
       throw error;
     }
     
@@ -103,81 +90,35 @@ const getUserAchievements = async (userId) => {
     return { achievements, error: null };
   } catch (error) {
     console.error('Error loading achievements:', error);
-    
-    // Return empty array instead of sample data
-    return { 
-      achievements: [], 
-      error 
-    };
-  }
-};
-
-// Also add this function to manually trigger streak update
-const refreshStreakAndAchievements = async () => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    
-    // Call the RPC function to update streak
-    const { data, error } = await supabase.rpc('update_user_streak_and_achievements', {
-      p_user_id: user.id
-    });
-    
-    if (error) {
-      console.error('Error updating streak:', error);
-      return;
-    }
-    
-    // Reload user profile to get updated streak
-    const userProfile = await getUserProfile(user.id);
-    if (userProfile) {
-      setStreak(userProfile.streak_count || 0);
-      setTokens(userProfile.eco_points || 0);
-    }
-    
-    // Reload achievements
-    const achievementsResult = await getUserAchievements(user.id);
-    if (achievementsResult.achievements) {
-      setAchievements(achievementsResult.achievements);
-    }
-  } catch (error) {
-    console.error('Error refreshing streak and achievements:', error);
+    return { achievements: [], error };
   }
 };
 
 const subscribeToUserUpdates = (userId, callback) => {
   return supabase
     .channel(`profile_${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'user_profiles',
-        filter: `id=eq.${userId}`,
-      },
-      callback
-    )
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'user_profiles',
+      filter: `id=eq.${userId}`,
+    }, callback)
     .subscribe();
 };
 
 const subscribeToNotifications = (userId, callback) => {
   return supabase
     .channel(`notifications_${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${userId}`,
-      },
-      callback
-    )
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'notifications',
+      filter: `user_id=eq.${userId}`,
+    }, callback)
     .subscribe();
 };
 
-// Simple inline components
+// Inline components
 const StreakCounter = ({ streak = 0, theme, isDarkMode }) => (
   <View style={[
     styles.streakContainer,
@@ -271,7 +212,6 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   
   const [userName, setUserName] = useState('User');
   const [achievements, setAchievements] = useState([]);
@@ -281,17 +221,53 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [emissionAmount, setEmissionAmount] = useState('');
+  const [activityType, setActivityType] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const categories = [
-    { id: 'transport', name: 'Transport', emoji: '🚗', factor: 0.21 },
-    { id: 'food', name: 'Food', emoji: '🍽️', factor: 0.5 },
-    { id: 'energy', name: 'Energy', emoji: '⚡', factor: 0.233 },
-    { id: 'shopping', name: 'Shopping', emoji: '🛍️', factor: 0.3 },
-    { id: 'waste', name: 'Waste', emoji: '🗑️', factor: 0.1 },
+    { 
+      id: 'transport', 
+      name: 'Transport', 
+      emoji: '🚗',
+      activities: [
+        { id: 'car', name: 'Car', unit: 'km' },
+        { id: 'bus', name: 'Bus', unit: 'km' },
+        { id: 'train', name: 'Train', unit: 'km' },
+        { id: 'flight_domestic', name: 'Flight', unit: 'km' }
+      ]
+    },
+    { 
+      id: 'food', 
+      name: 'Food', 
+      emoji: '🍽️',
+      activities: [
+        { id: 'beef', name: 'Beef', unit: 'kg' },
+        { id: 'chicken', name: 'Chicken', unit: 'kg' },
+        { id: 'pork', name: 'Pork', unit: 'kg' },
+        { id: 'fish', name: 'Fish', unit: 'kg' }
+      ]
+    },
+    { 
+      id: 'home', 
+      name: 'Energy', 
+      emoji: '⚡',
+      activities: [
+        { id: 'electricity', name: 'Electricity', unit: 'kWh' },
+        { id: 'gas', name: 'Natural Gas', unit: 'kWh' },
+        { id: 'fuel_oil', name: 'Fuel Oil', unit: 'kWh' }
+      ]
+    },
+    { 
+      id: 'shopping', 
+      name: 'Shopping', 
+      emoji: '🛍️',
+      activities: [
+        { id: 'clothing', name: 'Clothing', unit: 'item' },
+        { id: 'electronics', name: 'Electronics', unit: 'item' }
+      ]
+    },
   ];
 
-  // Main initialization effect
   useEffect(() => {
     let mounted = true;
     let subscriptions = [];
@@ -310,10 +286,8 @@ export default function HomeScreen() {
 
         console.log('Initializing HomeScreen for user:', user.id);
 
-        // Load emissions using the shared hook
         await loadEmissions(user.id);
         
-        // Subscribe to emission changes using the shared hook
         const emissionSubscription = subscribeToChanges(user.id);
         if (emissionSubscription) {
           subscriptions.push(emissionSubscription);
@@ -355,7 +329,6 @@ export default function HomeScreen() {
         }
 
         const achievementsResult = await getUserAchievements(user.id);
-
         if (mounted && achievementsResult.achievements) {
           setAchievements(achievementsResult.achievements);
         }
@@ -376,11 +349,7 @@ export default function HomeScreen() {
             console.log('New notification:', payload);
             if (payload.new) {
               setNotifications(prev => [payload.new, ...prev]);
-              Alert.alert(
-                payload.new.title,
-                payload.new.message,
-                [{ text: 'OK' }]
-              );
+              Alert.alert(payload.new.title, payload.new.message, [{ text: 'OK' }]);
             }
           }
         });
@@ -411,14 +380,8 @@ export default function HomeScreen() {
   }, [loadEmissions, subscribeToChanges]);
 
   const submitEmission = async () => {
-    if (!selectedCategory || !emissionAmount) {
-      Alert.alert('Error', 'Please select a category and enter an amount');
-      return;
-    }
-
-    const amount = parseFloat(emissionAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+    if (!selectedCategory || !emissionAmount || !activityType) {
+      Alert.alert('Error', 'Please select category, activity type, and enter an amount');
       return;
     }
 
@@ -430,29 +393,78 @@ export default function HomeScreen() {
         throw new Error('User not authenticated');
       }
 
-      const result = await addEmission(user.id, selectedCategory, amount);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to add emission');
-      }
+      console.log('🚀 Calculating emissions using EmissionService...');
+      console.log(`Category: ${selectedCategory}, Activity: ${activityType}, Amount: ${emissionAmount}`);
 
-      const pointsAwarded = await incrementEcoPoints(user.id, 5);
-      if (pointsAwarded) {
-        setTokens(pointsAwarded);
+      // Use the EmissionService to calculate emissions
+      const result = await EmissionService.calculateEmissions(
+        selectedCategory,
+        activityType,
+        parseFloat(emissionAmount),
+        {}
+      );
+
+      console.log('📊 EmissionService result:', result);
+
+      if (result.success) {
+        // Store emission in database
+        const { error: emissionError } = await supabase
+          .from('emissions')
+          .insert({
+            user_id: user.id,
+            category: selectedCategory,
+            subcategory: activityType,
+            amount: result.emissions,
+            emission_factor: result.emission_factor,
+            source: result.source.includes('Climatiq') ? 'api' : 'manual',
+            description: `${activityType} - ${emissionAmount} ${result.unit || 'units'}`,
+            metadata: {
+              calculation_details: result.details,
+              confidence: result.confidence,
+              input_amount: parseFloat(emissionAmount)
+            }
+          });
+
+        if (emissionError) {
+          console.error('Error storing emission:', emissionError);
+          throw emissionError;
+        }
+
+        // Update user profile totals
+        const { error: profileError } = await supabase.rpc('increment_user_emissions', {
+          p_user_id: user.id,
+          p_amount: result.emissions
+        });
+
+        if (profileError) {
+          console.warn('Error updating profile:', profileError);
+        }
+
+        // Award eco points
+        const pointsAwarded = Math.floor(result.emissions * 2);
+        await incrementEcoPoints(user.id, pointsAwarded);
+
+        // Reload emissions data
+        await loadEmissions(user.id);
+
+        Alert.alert(
+          'Success! 🎉', 
+          `Emission logged: ${result.emissions.toFixed(2)} kg CO₂\n` +
+          `Data source: ${result.source}\n` +
+          `Confidence: ${result.confidence}\n` +
+          `Points earned: ${pointsAwarded} 🪙`
+        );
+
+        setModalVisible(false);
+        setEmissionAmount('');
+        setSelectedCategory('');
+        setActivityType('');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to calculate emissions');
       }
-      
-      // The hook will automatically update emissions across both screens
-      await loadEmissions(user.id);
-      
-      setEmissionAmount('');
-      setSelectedCategory('');
-      setModalVisible(false);
-      
-      Alert.alert('Success! 🎉', 'Emission logged successfully!\n+5 eco points earned!');
-      
     } catch (error) {
       console.error('Error submitting emission:', error);
-      Alert.alert('Error', error.message || 'Failed to log emission. Please try again.');
+      Alert.alert('Error', 'Failed to log emission. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -479,7 +491,10 @@ export default function HomeScreen() {
           backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5',
         }
       ]}
-      onPress={() => setSelectedCategory(item.id)}
+      onPress={() => {
+        setSelectedCategory(item.id);
+        setActivityType(''); // Reset activity when category changes
+      }}
     >
       <Text style={styles.categoryEmoji}>{item.emoji}</Text>
       <Text style={[
@@ -490,6 +505,8 @@ export default function HomeScreen() {
       </Text>
     </TouchableOpacity>
   );
+
+  const selectedCategoryData = categories.find(c => c.id === selectedCategory);
 
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
@@ -694,8 +711,45 @@ export default function HomeScreen() {
               scrollEnabled={false}
             />
             
+            {selectedCategoryData && (
+              <>
+                <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
+                  Select Activity Type
+                </Text>
+                <View style={styles.activityGrid}>
+                  {selectedCategoryData.activities.map((activity) => (
+                    <TouchableOpacity
+                      key={activity.id}
+                      style={[
+                        styles.activityButton,
+                        {
+                          backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider,
+                          borderColor: activityType === activity.id ? theme.accentText : theme.border,
+                        },
+                        activityType === activity.id && {
+                          backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5',
+                        }
+                      ]}
+                      onPress={() => setActivityType(activity.id)}
+                    >
+                      <Text style={[
+                        styles.activityText,
+                        { color: activityType === activity.id ? theme.accentText : theme.primaryText }
+                      ]}>
+                        {activity.name}
+                      </Text>
+                      <Text style={[styles.activityUnit, { color: theme.secondaryText }]}>
+                        ({activity.unit})
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+            
             <Text style={[styles.sectionTitle, { color: theme.secondaryText }]}>
-              Amount (kg CO₂e)
+              Amount {selectedCategoryData && activityType && 
+                `(${selectedCategoryData.activities.find(a => a.id === activityType)?.unit || ''})`}
             </Text>
             <TextInput
               style={[
@@ -726,6 +780,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   setModalVisible(false);
                   setSelectedCategory('');
+                  setActivityType('');
                   setEmissionAmount('');
                 }}
                 disabled={submitting}
@@ -1052,6 +1107,28 @@ const styles = StyleSheet.create({
   categoryName: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  activityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 10,
+  },
+  activityButton: {
+    flex: 1,
+    minWidth: '45%',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  activityText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  activityUnit: {
+    fontSize: 11,
+    marginTop: 2,
   },
   amountInput: {
     borderRadius: 12,

@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
 import { calculateRealEmissions } from '../../api/climatiq';
+import EmissionService from '../../services/EmissionService';
 
 // Carbon emission factors (kg CO2 per unit)
 const EMISSION_FACTORS = {
@@ -135,89 +136,88 @@ export default function CarbonCalculator({ onCalculationComplete }) {
     }
   };
 
-  const calculateEmissions = async () => {
-    if (!selectedItem && (!customItem || !customFactor)) {
-      Alert.alert('Missing Information', 'Please select an item or enter custom values');
-      return;
-    }
+ const calculateEmissions = async () => {
+  if (!selectedItem && (!customItem || !customFactor)) {
+    Alert.alert('Missing Information', 'Please select an item or enter custom values');
+    return;
+  }
 
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount');
-      return;
-    }
+  if (!amount || parseFloat(amount) <= 0) {
+    Alert.alert('Invalid Amount', 'Please enter a valid amount');
+    return;
+  }
 
-    setIsCalculating(true);
+  setIsCalculating(true);
 
-    try {
-      let emissions = 0;
-      let itemLabel = '';
-      let unit = '';
+  try {
+    let result;
+    let itemLabel = '';
+    let unit = '';
 
-      if (selectedItem) {
-        const factor = EMISSION_FACTORS[selectedCategory][selectedItem];
-        itemLabel = factor.label;
-        unit = factor.unit;
-
-        if (useClimatiqAPI) {
-          // Try to use Climatiq API for more accurate calculation
-          try {
-            emissions = await calculateRealEmissions(
-              `${selectedCategory}.${selectedItem}`,
-              parseFloat(amount)
-            );
-          } catch (apiError) {
-            console.log('Climatiq API failed, using local factors');
-            emissions = parseFloat(amount) * factor.factor;
-          }
-        } else {
-          emissions = parseFloat(amount) * factor.factor;
+    if (selectedItem) {
+      // Use EmissionService for real-time calculations
+      result = await EmissionService.calculateEmissions(
+        selectedCategory,
+        selectedItem,
+        parseFloat(amount),
+        { 
+          unit: EMISSION_FACTORS[selectedCategory][selectedItem].unit,
+          region: 'US' // Could make this configurable
         }
-      } else {
-        // Custom calculation
-        itemLabel = customItem;
-        unit = 'units';
-        emissions = parseFloat(amount) * parseFloat(customFactor);
-      }
+      );
+      
+      itemLabel = EMISSION_FACTORS[selectedCategory][selectedItem].label;
+      unit = EMISSION_FACTORS[selectedCategory][selectedItem].unit;
+    } else {
+      // Custom calculation - still use manual factor
+      itemLabel = customItem;
+      unit = 'units';
+      result = {
+        success: true,
+        emissions: parseFloat(amount) * parseFloat(customFactor),
+        source: 'custom'
+      };
+    }
 
+    if (result.success) {
       // Save to database
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { error } = await supabase
-          .from('emissions')
-          .insert({
-            user_id: user.id,
-            category: selectedCategory,
-            subcategory: selectedItem || 'custom',
-            amount: emissions,
-            unit: 'kg_co2e',
-            description: `${itemLabel}: ${amount} ${unit}`,
-            emission_factor: selectedItem 
-              ? EMISSION_FACTORS[selectedCategory][selectedItem].factor 
-              : parseFloat(customFactor),
-            metadata: {
-              item: itemLabel,
-              quantity: parseFloat(amount),
-              unit: unit,
-              calculation_method: useClimatiqAPI ? 'climatiq_api' : 'local_factors'
-            }
-          });
-
-        if (error) {
-          console.error('Error saving emission:', error);
-        } else {
-          // Update totals
-          setMonthlyTotal(prev => prev + emissions);
-          setYearlyProjection(prev => prev + (emissions * 12));
-          
-          // Reload history
-          loadCalculationHistory();
-        }
+        await supabase.from('emissions').insert({
+          user_id: user.id,
+          category: selectedCategory,
+          subcategory: selectedItem || 'custom',
+          amount: result.emissions,
+          unit: 'kg_co2e',
+          description: `${itemLabel}: ${amount} ${unit}`,
+          emission_factor: result.emission_factor || parseFloat(customFactor),
+          source: result.source,
+          metadata: {
+            item: itemLabel,
+            quantity: parseFloat(amount),
+            unit: unit,
+            calculation_method: result.source,
+            details: result.details
+          }
+        });
       }
 
-      // Show result
+      // Update totals
+      setMonthlyTotal(prev => prev + result.emissions);
+      setYearlyProjection((monthlyTotal + result.emissions) * 12);
+      
+      // Reload history
+      await loadCalculationHistory();
+
+      // Show result with source information
       Alert.alert(
         '🌍 Carbon Footprint Calculated',
-        `${itemLabel}: ${amount} ${unit}\n\nEmissions: ${emissions.toFixed(2)} kg CO₂\n\nMonthly Total: ${(monthlyTotal + emissions).toFixed(2)} kg CO₂\nYearly Projection: ${((monthlyTotal + emissions) * 12).toFixed(2)} kg CO₂`,
+        `${itemLabel}: ${amount} ${unit}\n\n` +
+        `Emissions: ${result.emissions.toFixed(2)} kg CO₂\n` +
+        `Data Source: ${result.source}\n` +
+        `Confidence: ${result.confidence || 'N/A'}\n\n` +
+        `Monthly Total: ${(monthlyTotal + result.emissions).toFixed(2)} kg CO₂\n` +
+        `Yearly Projection: ${((monthlyTotal + result.emissions) * 12).toFixed(2)} kg CO₂`,
         [
           { text: 'View Comparisons', onPress: () => setComparisonModalVisible(true) },
           { text: 'OK', onPress: () => clearForm() }
@@ -231,17 +231,19 @@ export default function CarbonCalculator({ onCalculationComplete }) {
           item: itemLabel,
           amount: parseFloat(amount),
           unit: unit,
-          emissions: emissions
+          emissions: result.emissions,
+          source: result.source
         });
       }
-
-    } catch (error) {
-      console.error('Calculation error:', error);
-      Alert.alert('Error', 'Failed to calculate emissions');
-    } finally {
-      setIsCalculating(false);
     }
-  };
+  } catch (error) {
+    console.error('Calculation error:', error);
+    Alert.alert('Error', 'Failed to calculate emissions. Using offline mode.');
+  } finally {
+    setIsCalculating(false);
+  }
+};
+
 
   const clearForm = () => {
     setSelectedItem(null);

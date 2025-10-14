@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
+import EmissionService from '../../services/EmissionService';
 
 // Your existing constants (Colors, Typography, etc.) remain the same...
 const Colors = {
@@ -192,97 +193,78 @@ export default function ActivityTracker({ onActivityAdded }) {
   };
 
   const handleAddActivity = async () => {
-    if (!selectedActivity || !amount) {
-      Alert.alert('Missing Information', 'Please enter the amount for this activity.');
+  if (!selectedActivity || !amount) {
+    Alert.alert('Missing Information', 'Please enter the amount for this activity.');
+    return;
+  }
+
+  const numericAmount = parseFloat(amount);
+  if (isNaN(numericAmount) || numericAmount <= 0) {
+    Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      Alert.alert('Error', 'Please log in to add activities.');
       return;
     }
 
-    const numericAmount = parseFloat(amount);
-    if (isNaN(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'Please log in to add activities.');
-        return;
-      }
-
-      const carbonEmissions = numericAmount * selectedActivity.factor;
-      
-      // Try carbon_activities first, fallback to emissions
-      let saveError = null;
-      
-      const { error: activityError } = await supabase
-        .from('carbon_activities')
-        .insert([{
-          user_id: user.id,
-          category: selectedCategory,
-          activity_type: selectedActivity.id,
-          activity_name: selectedActivity.label,
-          amount: numericAmount,
-          unit: selectedActivity.unit,
-          carbon_kg: carbonEmissions,
-          description: description.trim() || null,
-        }]);
-
-      if (activityError && activityError.message?.includes('carbon_activities')) {
-        // Fallback to emissions table
-        const { error: emissionError } = await supabase
-          .from('emissions')
-          .insert([{
-            user_id: user.id,
-            category: selectedCategory,
-            amount: carbonEmissions,
-            description: `${selectedActivity.label}: ${numericAmount} ${selectedActivity.unit}`,
-          }]);
-        
-        saveError = emissionError;
-      } else {
-        saveError = activityError;
-      }
-
-      if (saveError) {
-        console.error('Error saving activity:', saveError);
-        Alert.alert('Error', 'Failed to save activity. Please try again.');
-        return;
-      }
-
-      // Create activity data for callback
-      const activityData = {
+    // Use EmissionService for real calculations
+    const result = await EmissionService.calculateEmissions(
+      selectedCategory,
+      selectedActivity.id,
+      numericAmount,
+      { unit: selectedActivity.unit }
+    );
+    
+    if (result.success) {
+      // Save to database
+      await supabase.from('carbon_activities').insert({
+        user_id: user.id,
         category: selectedCategory,
-        carbon_kg: carbonEmissions,
+        activity_type: selectedActivity.id,
         activity_name: selectedActivity.label,
         amount: numericAmount,
         unit: selectedActivity.unit,
-      };
-
-      // Update recent activities
-      await loadRecentActivities();
-      
-      // Callback to parent
-      onActivityAdded?.(activityData);
+        carbon_kg: result.emissions,
+        emission_source: result.source,
+        description: description.trim() || null,
+      });
 
       Alert.alert(
         'Activity Added!',
-        `Added ${numericAmount} ${selectedActivity.unit} of ${selectedActivity.label}\nCarbon emissions: ${carbonEmissions.toFixed(2)} kg CO₂`
+        `${selectedActivity.label}: ${numericAmount} ${selectedActivity.unit}\n` +
+        `Emissions: ${result.emissions.toFixed(2)} kg CO₂\n` +
+        `Calculated via: ${result.source}`
       );
+
+      onActivityAdded?.({
+        category: selectedCategory,
+        carbon_kg: result.emissions,
+        activity_name: selectedActivity.label,
+        amount: numericAmount,
+        unit: selectedActivity.unit,
+        source: result.source
+      });
 
       // Reset form
       setAmount('');
       setDescription('');
       setModalVisible(false);
-    } catch (error) {
-      console.error('Error adding activity:', error);
-      Alert.alert('Error', 'Failed to add activity. Please try again.');
-    } finally {
-      setLoading(false);
+      await loadRecentActivities();
     }
-  };
+  } catch (error) {
+    console.error('Error adding activity:', error);
+    Alert.alert('Error', 'Failed to add activity. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const CategoryButton = ({ categoryKey, category }) => {
     const isSelected = selectedCategory === categoryKey;
