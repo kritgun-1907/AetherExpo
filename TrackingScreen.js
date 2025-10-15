@@ -4,6 +4,10 @@ import ActivityTracker from './src/components/carbon/ActivityTracker';
 import { calculateRealEmissions } from './src/api/climatiq';
 import CarbonCalculator from './src/components/carbon/CarbonCalculator';
 import TripTracker from './src/components/carbon/TripTracker';
+import EmissionService from './src/services/EmissionService';
+import SmartActivityInput from './src/components/carbon/SmartActivityInput';
+import AutopilotEmissionService from './src/services/AutopilotEmissionService';
+import ActivityIdFinder from './src/components/ActivityIDFinder';
 import {
   View,
   Text,
@@ -40,12 +44,14 @@ export default function TrackingScreen() {
   const { theme, isDarkMode } = useTheme();
   const { addEmission: storeAddEmission } = useCarbonStore();
   
+  const [showFinder, setShowFinder] = useState(false);
+
   // State hooks for category selection
   const [selectedCategory, setSelectedCategory] = useState('transport');
   const [activeView, setActiveView] = useState('quick');
   
   // Transportation state
-  const [transportMode, setTransportMode] = useState('car');
+ const [transportMode, setTransportMode] = useState('car_petrol');
   const [distance, setDistance] = useState('');
   
   // Food state
@@ -71,10 +77,33 @@ export default function TrackingScreen() {
       
       const { data: { user } } = await supabase.auth.getUser();
       console.log('User authenticated:', !!user);
+
+      console.log('=== TESTING CLIMATIQ API ===');
+      const apiResult = await EmissionService.testApiConnection();
+      console.log('API test result:', apiResult);
+
     };
     
     testSetup();
   }, []);
+
+  if (showFinder) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        {/* Back button */}
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => setShowFinder(false)}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+          <Text style={styles.backButtonText}>Back to Tracking</Text>
+        </TouchableOpacity>
+        
+        <ActivityIdFinder />
+      </View>
+    );
+  }
 
   const handleActivityAdded = (activityData) => {
     console.log('Activity added:', activityData);
@@ -97,92 +126,199 @@ export default function TrackingScreen() {
     }
   };
 
-  const calculateEmissions = () => {
-    let emissions = 0;
-    let description = '';
-
+const calculateEmissions = async () => {
+  let result;
+  let itemLabel = '';
+  
+  try {
     switch(selectedCategory) {
       case 'transport':
-        const transportFactors = {
-          car: 0.21,
-          bus: 0.089,
-          train: 0.041,
-          bike: 0,
-          walk: 0
-        };
-        emissions = parseFloat(distance || 0) * transportFactors[transportMode];
-        description = `${distance}km by ${transportMode}`;
+        if (!distance || parseFloat(distance) <= 0) {
+          Alert.alert('Error', 'Please enter a valid distance');
+          return;
+        }
+        console.log('🚗 Calculating transport emissions:', { transportMode, distance });
+        result = await EmissionService.calculateEmissions(
+          'transport',
+          transportMode,
+          parseFloat(distance),
+          { unit: 'km', region: 'US' } // Added region
+        );
+        const modeLabel = transportMode.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+        itemLabel = `${modeLabel} - ${distance} km`;
         break;
         
       case 'food':
-        const foodFactors = {
-          meat: 6.61,
-          vegetarian: 1.43,
-          vegan: 0.89
-        };
-        emissions = parseFloat(mealCount || 0) * foodFactors[mealType];
-        description = `${mealCount} ${mealType} meal(s)`;
+        if (!mealCount || parseFloat(mealCount) <= 0) {
+          Alert.alert('Error', 'Please enter number of meals');
+          return;
+        }
+        console.log('🍽️ Calculating food emissions:', { mealType, mealCount });
+        // Convert meals to weight (300g per meal)
+        const mealWeight = parseFloat(mealCount) * 0.3;
+        result = await EmissionService.calculateEmissions(
+          'food',
+          mealType,
+          mealWeight,
+          { unit: 'kg', region: 'US' }
+        );
+        const mealLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1);
+        itemLabel = `${mealLabel} meal(s) - ${mealCount}`;
         break;
         
       case 'home':
-        const energyFactors = {
-          electricity: 0.23,
-          gas: 0.18,
-          oil: 0.27
-        };
-        emissions = parseFloat(energyHours || 0) * energyFactors[energyType];
-        description = `${energyHours} hours of ${energyType}`;
+        if (!energyHours || parseFloat(energyHours) <= 0) {
+          Alert.alert('Error', 'Please enter usage amount');
+          return;
+        }
+        console.log('🏠 Calculating home emissions:', { energyType, energyHours });
+        result = await EmissionService.calculateEmissions(
+          'home',
+          energyType,
+          parseFloat(energyHours),
+          { 
+            unit: energyType === 'electricity' ? 'kWh' : energyType === 'gas' ? 'm³' : 'L',
+            region: 'US'
+          }
+        );
+        const energyLabel = energyType.charAt(0).toUpperCase() + energyType.slice(1);
+        itemLabel = `${energyLabel} - ${energyHours} units`;
         break;
         
       case 'shopping':
-        const shoppingFactors = {
-          clothing: 5.5,
-          electronics: 12.4,
-          furniture: 8.2,
-          groceries: 2.1
-        };
-        emissions = parseFloat(itemCount || 0) * shoppingFactors[itemType];
-        description = `${itemCount} ${itemType} item(s)`;
+        if (!itemCount || parseFloat(itemCount) <= 0) {
+          Alert.alert('Error', 'Please enter item quantity');
+          return;
+        }
+        console.log('🛍️ Calculating shopping emissions:', { itemType, itemCount });
+        result = await EmissionService.calculateEmissions(
+          'shopping',
+          itemType,
+          parseFloat(itemCount),
+          { unit: 'item', region: 'US' }
+        );
+        const itemLabel2 = itemType.charAt(0).toUpperCase() + itemType.slice(1);
+        itemLabel = `${itemLabel2} - ${itemCount} item(s)`;
         break;
     }
-
-    return { emissions, description };
-  };
-
-  const handleSubmit = async () => {
-    const { emissions, description } = calculateEmissions();
     
-    if (emissions <= 0) {
-      Alert.alert('Error', 'Please enter valid values');
-      return;
-    }
-
-    try {
-      if (storeAddEmission) {
-        storeAddEmission(emissions, selectedCategory);
-      }
-
+    if (result && result.success) {
+      console.log('✅ Emission calculated successfully:', result);
+      
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await addEmission(user.id, selectedCategory, emissions);
+        await supabase.from('emissions').insert({
+          user_id: user.id,
+          category: selectedCategory,
+          amount: result.emissions,
+          description: itemLabel,
+          source: result.source,
+          confidence: result.confidence,
+          metadata: result.details
+        });
       }
-
+      
+      // Enhanced alert with more details
       Alert.alert(
-        'Activity Tracked!',
-        `You added ${emissions.toFixed(2)}kg CO₂e\n${description}`,
+        '✅ Activity Tracked!',
+        `${itemLabel}\n\n` +
+        `🌍 Emissions: ${result.emissions.toFixed(2)} ${result.unit}\n` +
+        `📊 Source: ${result.source}\n` +
+        `🎯 Confidence: ${result.confidence}\n\n` +
+        (result.details?.methodology ? `Method: ${result.details.methodology}` : ''),
         [{ text: 'OK', onPress: clearForm }]
       );
-    } catch (error) {
-      console.error('Error submitting emission:', error);
-      Alert.alert('Error', 'Failed to track emission. Please try again.');
+      
+      if (storeAddEmission) {
+        storeAddEmission(result.emissions, selectedCategory);
+      }
+    } else {
+      console.error('❌ Calculation failed:', result.error);
+      Alert.alert(
+        'Calculation Failed', 
+        result.error || 'Unable to calculate emissions. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
-  };
+  } catch (error) {
+    console.error('❌ Emission calculation error:', error);
+    Alert.alert(
+      'Error', 
+      'Failed to calculate emissions. Please check your internet connection and try again.'
+    );
+  }
+};
 
-  const clearForm = () => {
-    setDistance('');
-    setEnergyHours('');
-    setMealCount('1');
-    setItemCount('1');
+// Add this at the beginning of handleSubmit:
+console.log('DEBUG: Form values:', {
+  selectedCategory,
+  distance,
+  mealCount,
+  energyHours,
+  itemCount,
+  transportMode,
+  mealType,
+  energyType,
+  itemType
+});
+
+// NEW FUNCTION ADDED:
+const clearForm = () => {
+  setDistance('');
+  setMealCount('1');
+  setEnergyHours('');
+  setItemCount('1');
+};
+
+  const handleSubmit = async () => {
+  // First validate input
+  let hasValidInput = false;
+  
+  switch(selectedCategory) {
+    case 'transport':
+      hasValidInput = distance && parseFloat(distance) > 0;
+      break;
+    case 'food':
+      hasValidInput = mealCount && parseFloat(mealCount) > 0;
+      break;
+    case 'home':
+      hasValidInput = energyHours && parseFloat(energyHours) > 0;
+      break;
+    case 'shopping':
+      hasValidInput = itemCount && parseFloat(itemCount) > 0;
+      break;
+  }
+  
+  if (!hasValidInput) {
+    Alert.alert('Error', 'Please enter valid values');
+    return;
+  }
+
+  try {
+    // Call calculateEmissions and wait for it since it's async
+    await calculateEmissions();
+    // calculateEmissions already handles everything including alerts and clearing form
+  } catch (error) {
+    console.error('Error submitting emission:', error);
+    Alert.alert('Error', 'Failed to track emission. Please try again.');
+    console.log('DEBUG: Calculated emissions:', { emissions, description });
+  }
+  
+};
+
+
+  const inferCategory = (description) => {
+    const lower = description.toLowerCase();
+    if (lower.includes('drive') || lower.includes('car') || lower.includes('bus') || lower.includes('flight')) {
+      return 'transport';
+    } else if (lower.includes('food') || lower.includes('meal') || lower.includes('eat')) {
+      return 'food';
+    } else if (lower.includes('electricity') || lower.includes('gas') || lower.includes('energy')) {
+      return 'home';
+    } else if (lower.includes('buy') || lower.includes('shop') || lower.includes('purchase')) {
+      return 'shopping';
+    }
+    return 'other';
   };
 
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
@@ -206,6 +342,16 @@ export default function TrackingScreen() {
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.primaryText }]}>Track Activity</Text>
           <Text style={[styles.subtitle, { color: theme.secondaryText }]}>Log your daily carbon emissions</Text>
+
+            {/* ADD THIS BUTTON */}
+          <TouchableOpacity 
+            style={styles.finderButton}
+            onPress={() => setShowFinder(true)}
+          >
+            <Ionicons name="search-outline" size={20} color="#10B981" />
+            <Text style={styles.finderButtonText}>🔍 Find Activity IDs</Text>
+          </TouchableOpacity>
+          
         </View>
 
         {/* View Selector */}
@@ -232,6 +378,29 @@ export default function TrackingScreen() {
               Quick Track
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+  style={[
+    styles.viewButton,
+    {
+      backgroundColor: activeView === 'smart' ? theme.accentText : 'transparent',
+      borderColor: theme.accentText,
+    }
+  ]}
+  onPress={() => setActiveView('smart')}
+>
+  <Ionicons 
+    name="sparkles-outline" 
+    size={20} 
+    color={activeView === 'smart' ? '#FFFFFF' : theme.accentText} 
+  />
+  <Text style={[
+    styles.viewButtonText,
+    { color: activeView === 'smart' ? '#FFFFFF' : theme.accentText }
+  ]}>
+    AI Smart
+  </Text>
+</TouchableOpacity>
 
           <TouchableOpacity
             style={[
@@ -318,25 +487,33 @@ export default function TrackingScreen() {
                 <Text style={[styles.formTitle, { color: theme.primaryText }]}>Transportation Details</Text>
                 
                 <Text style={[styles.label, { color: theme.secondaryText }]}>Mode of Transport</Text>
-                <View style={styles.optionContainer}>
-                  {['car', 'bus', 'train', 'bike', 'walk'].map((mode) => (
-                    <TouchableOpacity
-                      key={mode}
-                      style={[
-                        dynamicStyles.option,
-                        transportMode === mode && dynamicStyles.optionActive
-                      ]}
-                      onPress={() => setTransportMode(mode)}
-                    >
-                      <Text style={[
-                        styles.optionText,
-                        { color: transportMode === mode ? theme.buttonText : theme.secondaryText }
-                      ]}>
-                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+               <View style={styles.optionContainer}>
+              {[
+                  { key: 'car_petrol', label: 'Car (Petrol)', emoji: '🚗' },
+                  { key: 'car_diesel', label: 'Car (Diesel)', emoji: '🚙' },
+                  { key: 'car_electric', label: 'Electric Car', emoji: '⚡' },
+                  { key: 'bus', label: 'Bus', emoji: '🚌' },
+                  { key: 'train', label: 'Train', emoji: '🚆' },
+                  { key: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' }
+                ].map((mode) => (
+                  <TouchableOpacity
+                    key={mode.key}
+                    style={[
+                      dynamicStyles.option,
+                      transportMode === mode.key && dynamicStyles.optionActive
+                    ]}
+                    onPress={() => setTransportMode(mode.key)}
+                  >
+                    <Text style={styles.optionEmoji}>{mode.emoji}</Text>
+                    <Text style={[
+                      styles.optionText,
+                      { color: transportMode === mode.key ? theme.buttonText : theme.secondaryText }
+                    ]}>
+                      {mode.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
                 <Text style={[styles.label, { color: theme.secondaryText }]}>Distance (km)</Text>
                 <TextInput
@@ -501,6 +678,19 @@ export default function TrackingScreen() {
             <TripTracker onTripComplete={handleTripComplete} />
           </View>
         )}
+        {/* Smart Activity Input View */}
+        {activeView === 'smart' && (
+  <View style={[dynamicStyles.form]}>
+    <SmartActivityInput 
+      onActivityAdded={(data) => {
+        console.log('Smart activity added:', data);
+        if (storeAddEmission) {
+          storeAddEmission(data.emissions, inferCategory(data.description));
+        }
+      }}
+    />
+  </View>
+)}
 
         {/* Info Card */}
         <View style={[dynamicStyles.infoCard]}>
