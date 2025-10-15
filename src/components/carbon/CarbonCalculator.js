@@ -16,6 +16,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
 import { calculateRealEmissions } from '../../api/climatiq';
 import EmissionService from '../../services/EmissionService';
+import EmissionSyncService from '../../services/EmissionSyncService';
+
 
 // Carbon emission factors (kg CO2 per unit)
 const EMISSION_FACTORS = {
@@ -155,51 +157,47 @@ export default function CarbonCalculator({ onCalculationComplete }) {
     let unit = '';
 
     if (selectedItem) {
-      // Use EmissionService for real-time calculations
+      // Use EmissionService
       result = await EmissionService.calculateEmissions(
         selectedCategory,
         selectedItem,
         parseFloat(amount),
         { 
           unit: EMISSION_FACTORS[selectedCategory][selectedItem].unit,
-          region: 'US' // Could make this configurable
+          region: 'US'
         }
       );
       
       itemLabel = EMISSION_FACTORS[selectedCategory][selectedItem].label;
       unit = EMISSION_FACTORS[selectedCategory][selectedItem].unit;
     } else {
-      // Custom calculation - still use manual factor
+      // Custom calculation
       itemLabel = customItem;
       unit = 'units';
       result = {
         success: true,
         emissions: parseFloat(amount) * parseFloat(customFactor),
-        source: 'custom'
+        source: 'custom',
+        unit: 'kg CO2e'
       };
     }
 
     if (result.success) {
-      // Save to database
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('emissions').insert({
-          user_id: user.id,
-          category: selectedCategory,
-          subcategory: selectedItem || 'custom',
-          amount: result.emissions,
-          unit: 'kg_co2e',
+      // 🔥 USE EmissionSyncService to sync across all screens
+      const syncResult = await EmissionSyncService.addEmission(
+        selectedCategory,
+        selectedItem || 'custom',
+        result.emissions,
+        {
+          unit: result.unit,
           description: `${itemLabel}: ${amount} ${unit}`,
-          emission_factor: result.emission_factor || parseFloat(customFactor),
-          source: result.source,
-          metadata: {
-            item: itemLabel,
-            quantity: parseFloat(amount),
-            unit: unit,
-            calculation_method: result.source,
-            details: result.details
-          }
-        });
+          calculation_id: result.calculation_id,
+          metadata: result.details
+        }
+      );
+
+      if (!syncResult.success) {
+        throw new Error(syncResult.error);
       }
 
       // Update totals
@@ -209,22 +207,21 @@ export default function CarbonCalculator({ onCalculationComplete }) {
       // Reload history
       await loadCalculationHistory();
 
-      // Show result with source information
+      // Show result
       Alert.alert(
         '🌍 Carbon Footprint Calculated',
         `${itemLabel}: ${amount} ${unit}\n\n` +
         `Emissions: ${result.emissions.toFixed(2)} kg CO₂\n` +
         `Data Source: ${result.source}\n` +
         `Confidence: ${result.confidence || 'N/A'}\n\n` +
-        `Monthly Total: ${(monthlyTotal + result.emissions).toFixed(2)} kg CO₂\n` +
-        `Yearly Projection: ${((monthlyTotal + result.emissions) * 12).toFixed(2)} kg CO₂`,
+        `Monthly Total: ${(monthlyTotal + result.emissions).toFixed(2)} kg CO₂`,
         [
           { text: 'View Comparisons', onPress: () => setComparisonModalVisible(true) },
           { text: 'OK', onPress: () => clearForm() }
         ]
       );
 
-      // Callback to parent
+      // Callback
       if (onCalculationComplete) {
         onCalculationComplete({
           category: selectedCategory,
@@ -238,7 +235,7 @@ export default function CarbonCalculator({ onCalculationComplete }) {
     }
   } catch (error) {
     console.error('Calculation error:', error);
-    Alert.alert('Error', 'Failed to calculate emissions. Using offline mode.');
+    Alert.alert('Error', 'Failed to calculate emissions');
   } finally {
     setIsCalculating(false);
   }

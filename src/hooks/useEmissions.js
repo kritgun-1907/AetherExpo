@@ -1,142 +1,243 @@
-import { useState, useEffect, useCallback } from 'react';
+// src/hooks/useEmissions.js - FIXED VERSION
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../api/supabase';
+import EmissionSyncService from '../services/EmissionSyncService';
 
-// Shared emission state across screens
-let emissionCache = {
-  daily: 0,
-  weekly: 0,
-  monthly: 0,
-  allTime: 0,
-  weeklyData: [0, 0, 0, 0, 0, 0, 0],
-  dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  lastUpdated: null,
-  listeners: new Set(),
-};
-
-export function useEmissions() {
+export const useEmissions = () => {
   const [emissions, setEmissions] = useState({
-    daily: emissionCache.daily,
-    weekly: emissionCache.weekly,
-    monthly: emissionCache.monthly,
-    allTime: emissionCache.allTime,
-    weeklyData: emissionCache.weeklyData,
-    dayNames: emissionCache.dayNames,
-    loading: false,
+    daily: 0,
+    weekly: 0,
+    monthly: 0,
+    allTime: 0,
+    weeklyData: [0, 0, 0, 0, 0, 0, 0],
+    dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
   });
+  
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
+  
+  const unsubscribeRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // Subscribe to cache updates
+  // Initialize sync service
   useEffect(() => {
-    const listener = (newData) => {
-      setEmissions((prev) => ({
-        ...prev,
-        ...newData,
-        loading: false,
-      }));
-    };
-
-    emissionCache.listeners.add(listener);
+    mountedRef.current = true;
+    initializeSync();
 
     return () => {
-      emissionCache.listeners.delete(listener);
+      mountedRef.current = false;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
     };
   }, []);
 
-  const notifyListeners = useCallback((newData) => {
-    emissionCache = { ...emissionCache, ...newData, lastUpdated: Date.now() };
-    emissionCache.listeners.forEach((listener) => listener(newData));
-  }, []);
-
-  const loadEmissions = useCallback(async (userId) => {
-    if (!userId) return;
-
-    setEmissions((prev) => ({ ...prev, loading: true }));
-
+  // Initialize sync and subscribe to updates
+  const initializeSync = async () => {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !mountedRef.current) return;
 
-      // Get today's emissions
-      const { data: todayData } = await supabase
-        .from('emissions')
-        .select('amount')
-        .eq('user_id', userId)
-        .gte('created_at', today.toISOString())
-        .lt('created_at', tomorrow.toISOString());
+      console.log('🔄 Initializing emissions sync...');
 
-      const dailyTotal = todayData?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
+      // Initialize real-time sync
+      await EmissionSyncService.initialize(user.id);
 
-      // Get weekly emissions with day names
-      const weekData = [];
-      const dayNames = [];
-      
-      for (let i = 6; i >= 0; i--) {
-        const day = new Date();
-        day.setDate(today.getDate() - i);
-        day.setHours(0, 0, 0, 0);
-        
-        const nextDay = new Date(day);
-        nextDay.setDate(day.getDate() + 1);
-        
-        const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
-        dayNames.push(dayName);
-        
-        const { data: dayEmissions } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', userId)
-          .gte('created_at', day.toISOString())
-          .lt('created_at', nextDay.toISOString());
+      // Subscribe to sync updates
+      unsubscribeRef.current = EmissionSyncService.subscribe((event, data) => {
+        if (!mountedRef.current) return;
 
-        const dayTotal = dayEmissions?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
-        weekData.push(dayTotal);
+        console.log('📡 Sync event:', event);
+
+        switch (event) {
+          case 'data_synced':
+            updateEmissionsFromSync(data);
+            break;
+          case 'emission_added':
+          case 'emission_updated':
+          case 'emission_deleted':
+            loadEmissions(user.id);
+            break;
+          case 'profile_updated':
+            setProfile(data);
+            break;
+        }
+      });
+
+      // Try to load cached data first
+      const cached = await EmissionSyncService.getCachedStats();
+      if (cached && mountedRef.current) {
+        updateEmissionsFromSync(cached);
+        setLastSync(new Date(cached.synced_at));
       }
 
-      const weeklyTotal = weekData.reduce((sum, val) => sum + val, 0);
+      // Then load fresh data
+      await loadEmissions(user.id);
+    } catch (error) {
+      console.error('Error initializing sync:', error);
+      if (mountedRef.current) {
+        setError(error.message);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
 
-      // Get monthly emissions
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
+  // Load emissions data
+  const loadEmissions = useCallback(async (userId) => {
+    if (!userId || !mountedRef.current) return;
 
-      const { data: monthData } = await supabase
-        .from('emissions')
-        .select('amount')
-        .eq('user_id', userId)
-        .gte('created_at', monthStart.toISOString());
+    try {
+      console.log('📊 Loading emissions for user:', userId);
 
-      const monthlyTotal = monthData?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
+      // Sync all data using the sync service
+      const stats = await EmissionSyncService.syncAllData();
 
-      // Get all-time emissions
-      const { data: allTimeData } = await supabase
-        .from('emissions')
-        .select('amount')
-        .eq('user_id', userId);
+      if (stats && mountedRef.current) {
+        updateEmissionsFromSync(stats);
+        setLastSync(new Date());
+      }
 
-      const allTimeTotal = allTimeData?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
+      // Load user profile
+      const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-      const newData = {
-        daily: dailyTotal,
-        weekly: weeklyTotal,
-        monthly: monthlyTotal,
-        allTime: allTimeTotal,
-        weeklyData: weekData,
-        dayNames: dayNames,
-      };
-
-      notifyListeners(newData);
+      if (profileData && mountedRef.current) {
+        setProfile(profileData);
+      }
     } catch (error) {
       console.error('Error loading emissions:', error);
-      setEmissions((prev) => ({ ...prev, loading: false }));
+      if (mountedRef.current) {
+        setError(error.message);
+      }
     }
-  }, [notifyListeners]);
+  }, []);
 
+  // 🔥 FIX: Extract emissions values from objects
+  const updateEmissionsFromSync = (stats) => {
+    if (!stats || !mountedRef.current) return;
+
+    console.log('📈 Updating emissions from sync:', stats);
+
+    // Extract weekly data array
+    let weeklyDataArray = stats.weekly_data || stats.weeklyData || [];
+    
+    // 🔥 FIX: Handle both formats - array of objects OR array of numbers
+    let normalizedWeeklyData;
+    
+    if (Array.isArray(weeklyDataArray) && weeklyDataArray.length > 0) {
+      // Check if first element is an object with 'emissions' property
+      if (typeof weeklyDataArray[0] === 'object' && weeklyDataArray[0].emissions !== undefined) {
+        // Extract emissions values from objects: [{day: "Mon", emissions: 5}] -> [5, ...]
+        normalizedWeeklyData = weeklyDataArray
+          .slice(0, 7)
+          .map(item => typeof item.emissions === 'number' ? item.emissions : 0);
+      } else {
+        // Already an array of numbers
+        normalizedWeeklyData = weeklyDataArray.slice(0, 7);
+      }
+    } else {
+      normalizedWeeklyData = [];
+    }
+    
+    // Ensure exactly 7 elements (pad with zeros if needed)
+    while (normalizedWeeklyData.length < 7) {
+      normalizedWeeklyData.push(0);
+    }
+
+    // Update emissions state
+    setEmissions(prev => ({
+      ...prev,
+      daily: typeof stats.daily === 'number' ? stats.daily : 0,
+      weekly: typeof stats.weekly === 'number' ? stats.weekly : 0,
+      monthly: typeof stats.monthly === 'number' ? stats.monthly : 0,
+      allTime: typeof (stats.all_time || stats.allTime) === 'number' ? (stats.all_time || stats.allTime) : 0,
+      weeklyData: normalizedWeeklyData,
+      dayNames: prev.dayNames,
+    }));
+
+    // Update profile if included in stats
+    if (stats.profile) {
+      setProfile(stats.profile);
+    }
+  };
+
+  // Manual refresh function
+  const refreshEmissions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await loadEmissions(user.id);
+      }
+    } catch (err) {
+      console.error('Error refreshing emissions:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadEmissions]);
+
+  // Add emission function
+  const addEmission = useCallback(async (emissionData) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      console.log('➕ Adding emission via hook:', emissionData);
+
+      // Use sync service to add emission
+      const result = await EmissionSyncService.addEmission({
+        ...emissionData,
+        user_id: user.id,
+      });
+
+      if (result) {
+        // Immediately refresh to get updated stats
+        await refreshEmissions();
+        return result;
+      }
+    } catch (error) {
+      console.error('Error adding emission:', error);
+      setError(error.message);
+      throw error;
+    }
+  }, [refreshEmissions]);
+
+  // Delete emission function
+  const deleteEmission = useCallback(async (emissionId) => {
+    try {
+      console.log('🗑️ Deleting emission via hook:', emissionId);
+
+      // Use sync service to delete emission
+      await EmissionSyncService.deleteEmission(emissionId);
+
+      // Immediately refresh to get updated stats
+      await refreshEmissions();
+    } catch (error) {
+      console.error('Error deleting emission:', error);
+      setError(error.message);
+      throw error;
+    }
+  }, [refreshEmissions]);
+
+  // 🔥 FIX: Add subscribeToChanges for real-time updates
   const subscribeToChanges = useCallback((userId) => {
     if (!userId) return null;
 
+    console.log('🔔 Setting up real-time subscription for user:', userId);
+
     const subscription = supabase
-      .channel(`emissions_${userId}`)
+      .channel(`emissions:${userId}`)
       .on(
         'postgres_changes',
         {
@@ -146,7 +247,8 @@ export function useEmissions() {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          console.log('Emission changed:', payload);
+          console.log('📥 Real-time emission change:', payload);
+          // Reload emissions when data changes
           loadEmissions(userId);
         }
       )
@@ -155,9 +257,17 @@ export function useEmissions() {
     return subscription;
   }, [loadEmissions]);
 
+  // 🔥 FIX: Return all functions that screens need
   return {
     emissions,
-    loadEmissions,
-    subscribeToChanges,
+    profile,
+    loading,
+    error,
+    lastSync,
+    refreshEmissions,
+    addEmission,
+    deleteEmission,
+    loadEmissions,        // ✅ NOW EXPORTED
+    subscribeToChanges,   // ✅ NOW EXPORTED
   };
-}
+};

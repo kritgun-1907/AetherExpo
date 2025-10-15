@@ -8,6 +8,7 @@ import EmissionService from './src/services/EmissionService';
 import SmartActivityInput from './src/components/carbon/SmartActivityInput';
 import AutopilotEmissionService from './src/services/AutopilotEmissionService';
 import ActivityIdFinder from './src/components/ActivityIDFinder';
+import EmissionSyncService from './src/services/EmissionSyncService';
 import {
   View,
   Text,
@@ -126,126 +127,109 @@ export default function TrackingScreen() {
     }
   };
 
+// REPLACE the calculateEmissions function in TrackingScreen.js with this:
+
 const calculateEmissions = async () => {
-  let result;
   let itemLabel = '';
+  let activityId = '';
+  
+  switch(selectedCategory) {
+    case 'transport':
+      if (!distance || parseFloat(distance) <= 0) {
+        Alert.alert('Error', 'Please enter a valid distance');
+        return;
+      }
+      activityId = transportMode;
+      itemLabel = `${transportMode.replace('_', ' ')} - ${distance} km`;
+      break;
+      
+    case 'food':
+      if (!mealCount || parseFloat(mealCount) <= 0) {
+        Alert.alert('Error', 'Please enter number of meals');
+        return;
+      }
+      activityId = mealType;
+      itemLabel = `${mealType} meal(s) - ${mealCount}`;
+      break;
+      
+    case 'home':
+      if (!energyHours || parseFloat(energyHours) <= 0) {
+        Alert.alert('Error', 'Please enter usage amount');
+        return;
+      }
+      activityId = energyType;
+      itemLabel = `${energyType} - ${energyHours} units`;
+      break;
+      
+    case 'shopping':
+      if (!itemCount || parseFloat(itemCount) <= 0) {
+        Alert.alert('Error', 'Please enter item quantity');
+        return;
+      }
+      activityId = itemType;
+      itemLabel = `${itemType} - ${itemCount} item(s)`;
+      break;
+  }
   
   try {
+    // Get the appropriate amount and unit
+    let amount, unit;
+    
     switch(selectedCategory) {
       case 'transport':
-        if (!distance || parseFloat(distance) <= 0) {
-          Alert.alert('Error', 'Please enter a valid distance');
-          return;
-        }
-        console.log('🚗 Calculating transport emissions:', { transportMode, distance });
-        result = await EmissionService.calculateEmissions(
-          'transport',
-          transportMode,
-          parseFloat(distance),
-          { unit: 'km', region: 'US' } // Added region
-        );
-        const modeLabel = transportMode.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-        itemLabel = `${modeLabel} - ${distance} km`;
+        amount = parseFloat(distance);
+        unit = 'km';
         break;
-        
       case 'food':
-        if (!mealCount || parseFloat(mealCount) <= 0) {
-          Alert.alert('Error', 'Please enter number of meals');
-          return;
-        }
-        console.log('🍽️ Calculating food emissions:', { mealType, mealCount });
-        // Convert meals to weight (300g per meal)
-        const mealWeight = parseFloat(mealCount) * 0.3;
-        result = await EmissionService.calculateEmissions(
-          'food',
-          mealType,
-          mealWeight,
-          { unit: 'kg', region: 'US' }
-        );
-        const mealLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1);
-        itemLabel = `${mealLabel} meal(s) - ${mealCount}`;
+        amount = parseFloat(mealCount) * 0.3;
+        unit = 'kg';
         break;
-        
       case 'home':
-        if (!energyHours || parseFloat(energyHours) <= 0) {
-          Alert.alert('Error', 'Please enter usage amount');
-          return;
-        }
-        console.log('🏠 Calculating home emissions:', { energyType, energyHours });
-        result = await EmissionService.calculateEmissions(
-          'home',
-          energyType,
-          parseFloat(energyHours),
-          { 
-            unit: energyType === 'electricity' ? 'kWh' : energyType === 'gas' ? 'm³' : 'L',
-            region: 'US'
-          }
-        );
-        const energyLabel = energyType.charAt(0).toUpperCase() + energyType.slice(1);
-        itemLabel = `${energyLabel} - ${energyHours} units`;
+        amount = parseFloat(energyHours);
+        unit = energyType === 'electricity' ? 'kWh' : 
+               energyType === 'gas' ? 'm³' : 'L';
         break;
-        
       case 'shopping':
-        if (!itemCount || parseFloat(itemCount) <= 0) {
-          Alert.alert('Error', 'Please enter item quantity');
-          return;
-        }
-        console.log('🛍️ Calculating shopping emissions:', { itemType, itemCount });
-        result = await EmissionService.calculateEmissions(
-          'shopping',
-          itemType,
-          parseFloat(itemCount),
-          { unit: 'item', region: 'US' }
-        );
-        const itemLabel2 = itemType.charAt(0).toUpperCase() + itemType.slice(1);
-        itemLabel = `${itemLabel2} - ${itemCount} item(s)`;
+        amount = parseFloat(itemCount);
+        unit = 'item';
         break;
+      default:
+        throw new Error('Invalid category');
     }
     
-    if (result && result.success) {
-      console.log('✅ Emission calculated successfully:', result);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('emissions').insert({
-          user_id: user.id,
-          category: selectedCategory,
-          amount: result.emissions,
-          description: itemLabel,
-          source: result.source,
-          confidence: result.confidence,
-          metadata: result.details
-        });
+    // 🔥 FIX: Pass original input values to EmissionSyncService
+    // Let it handle the calculation internally
+    const syncResult = await EmissionSyncService.addEmission(
+      selectedCategory,
+      activityId,
+      amount,           // ✅ Original amount (e.g., 2 km)
+      { 
+        unit: unit,     // ✅ Original unit (e.g., 'km')
+        region: 'US',
+        description: itemLabel
       }
-      
-      // Enhanced alert with more details
+    );
+    
+    if (syncResult.success) {
       Alert.alert(
         '✅ Activity Tracked!',
         `${itemLabel}\n\n` +
-        `🌍 Emissions: ${result.emissions.toFixed(2)} ${result.unit}\n` +
-        `📊 Source: ${result.source}\n` +
-        `🎯 Confidence: ${result.confidence}\n\n` +
-        (result.details?.methodology ? `Method: ${result.details.methodology}` : ''),
+        `🌍 Emissions: ${syncResult.calculation.emissions.toFixed(2)} ${syncResult.calculation.unit}\n` +
+        `📊 Source: ${syncResult.calculation.source}\n` +
+        `🎯 Confidence: ${syncResult.calculation.confidence}`,
         [{ text: 'OK', onPress: clearForm }]
       );
       
+      // Notify parent component
       if (storeAddEmission) {
-        storeAddEmission(result.emissions, selectedCategory);
+        storeAddEmission(syncResult.calculation.emissions, selectedCategory);
       }
     } else {
-      console.error('❌ Calculation failed:', result.error);
-      Alert.alert(
-        'Calculation Failed', 
-        result.error || 'Unable to calculate emissions. Please try again.',
-        [{ text: 'OK' }]
-      );
+      throw new Error(syncResult.error);
     }
   } catch (error) {
     console.error('❌ Emission calculation error:', error);
-    Alert.alert(
-      'Error', 
-      'Failed to calculate emissions. Please check your internet connection and try again.'
-    );
+    Alert.alert('Error', 'Failed to calculate emissions: ' + error.message);
   }
 };
 

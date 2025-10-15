@@ -331,119 +331,122 @@ class EmissionService {
   }
 
   async calculateWithClimatiq(category, activity, amount, options = {}) {
-    const activityMapping = this.getClimatiqActivityId(category, activity);
-    
-    if (!activityMapping) {
-      throw new Error(`No Climatiq mapping for ${category}/${activity}`);
-    }
-
-    // Build parameters based on parameter type
-    const parameters = {};
-    if (activityMapping.parameter_type === 'distance') {
-      parameters.distance = amount;
-      parameters.distance_unit = options.unit || activityMapping.unit;
-    } else if (activityMapping.parameter_type === 'weight') {
-      parameters.weight = amount;
-      parameters.weight_unit = options.unit || activityMapping.unit;
-    } else if (activityMapping.parameter_type === 'energy') {
-      parameters.energy = amount;
-      parameters.energy_unit = options.unit || activityMapping.unit;
-    } else if (activityMapping.parameter_type === 'money') {
-      parameters.money = amount;
-      parameters.money_unit = options.unit || activityMapping.unit || 'usd';
-    } else if (activityMapping.parameter_type === 'volume') {
-      parameters.volume = amount;
-      parameters.volume_unit = options.unit || activityMapping.unit;
-    }
-
-    const requestBody = {
-      emission_factor: {
-        activity_id: activityMapping.activity_id,
-        data_version: '^23'
-      },
-      parameters
-    };
-
-    console.log('📤 Climatiq request:', JSON.stringify(requestBody, null, 2));
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch(`${CLIMATIQ_BASE_URL}/estimate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${CLIMATIQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      console.log('📥 Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Climatiq API error:', errorText);
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Climatiq response:', data);
-      
-      return {
-        success: true,
-        emissions: data.co2e || 0,
-        unit: data.co2e_unit || 'kg',
-        source: 'Climatiq API (Real-time)',
-        emission_factor: data.emission_factor?.factor,
-        calculation_id: data.calculation_id,
-        confidence: 'high',
-        details: {
-          co2: data.co2 || 0,
-          ch4: data.ch4 || 0,
-          n2o: data.n2o || 0,
-          co2e_total: data.co2e || 0,
-          methodology: data.emission_factor?.source,
-          region: data.emission_factor?.region
-        }
-      };
-    } catch (error) {
-      console.error('❌ Climatiq API error:', error);
-      throw error;
-    }
+  const activityMapping = this.getClimatiqActivityId(category, activity);
+  
+  if (!activityMapping) {
+    throw new Error(`No Climatiq mapping for ${category}/${activity}`);
   }
 
-  async calculateWithFallback(category, activity, amount, options = {}) {
-    console.log('📊 Using fallback calculation...');
-    
-    const factor = this.fallbackFactors[category]?.[activity];
-    
-    if (!factor) {
-      return {
-        success: false,
-        error: `No emission factor found for ${category}/${activity}`,
-        emissions: 0
-      };
+  // Build parameters based on parameter type
+  const parameters = {};
+  if (activityMapping.parameter_type === 'distance') {
+    parameters.distance = amount;
+    parameters.distance_unit = options.unit || activityMapping.unit;
+  } else if (activityMapping.parameter_type === 'weight') {
+    parameters.weight = amount;
+    parameters.weight_unit = options.unit || activityMapping.unit;
+  } else if (activityMapping.parameter_type === 'energy') {
+    parameters.energy = amount;
+    parameters.energy_unit = options.unit || activityMapping.unit;
+  } else if (activityMapping.parameter_type === 'money') {
+    parameters.money = amount;
+    parameters.money_unit = options.unit || activityMapping.unit || 'usd';
+  } else if (activityMapping.parameter_type === 'volume') {
+    parameters.volume = amount;
+    parameters.volume_unit = options.unit || activityMapping.unit;
+  }
+
+  const requestBody = {
+    emission_factor: {
+      activity_id: activityMapping.activity_id,
+      data_version: '^23'
+    },
+    parameters
+  };
+
+  console.log('📤 Climatiq request:', JSON.stringify(requestBody, null, 2));
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${CLIMATIQ_BASE_URL}/estimate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CLIMATIQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    console.log('📥 Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Climatiq API error:', errorText);
+      throw new Error(`API error: ${response.status}`);
     }
 
-    const emissions = amount * factor.factor;
-
+    const data = await response.json();
+    console.log('✅ Climatiq response:', data);
+    
+    // 🔥 FIX: Return 'api' instead of 'Climatiq API (Real-time)'
     return {
       success: true,
-      emissions: emissions,
-      unit: 'kg CO2e',
-      source: `Local Database (${factor.source})`,
-      emission_factor: factor.factor,
-      confidence: 'medium',
+      emissions: data.co2e || 0,
+      unit: data.co2e_unit || 'kg',
+      source: 'api', // ✅ FIXED: Matches database constraint
+      source_detail: 'Climatiq API', // ✅ NEW: Store detail separately
+      emission_factor: data.emission_factor?.factor,
+      calculation_id: data.calculation_id,
+      confidence: 'high',
       details: {
-        factor_source: factor.source,
-        last_updated: factor.last_updated
+        co2: data.co2 || 0,
+        ch4: data.ch4 || 0,
+        n2o: data.n2o || 0,
+        co2e_total: data.co2e || 0,
+        methodology: data.emission_factor?.source,
+        region: data.emission_factor?.region
       }
     };
+  } catch (error) {
+    console.error('❌ Climatiq API error:', error);
+    throw error;
   }
+}
+
+  async calculateWithFallback(category, activity, amount, options = {}) {
+  console.log('📊 Using fallback calculation...');
+  
+  const factor = this.fallbackFactors[category]?.[activity];
+  
+  if (!factor) {
+    return {
+      success: false,
+      error: `No emission factor found for ${category}/${activity}`,
+      emissions: 0
+    };
+  }
+
+  const emissions = amount * factor.factor;
+
+  return {
+    success: true,
+    emissions: emissions,
+    unit: 'kg CO2e',
+    source: 'manual', // ✅ FIXED: Matches database constraint
+    source_detail: `Local Database (${factor.source})`, // ✅ NEW: Store detail separately
+    emission_factor: factor.factor,
+    confidence: 'medium',
+    details: {
+      factor_source: factor.source,
+      last_updated: factor.last_updated
+    }
+  };
+}
 
   async storeCalculation(category, activity, amount, emissions, source) {
     try {

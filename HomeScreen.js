@@ -379,96 +379,59 @@ export default function HomeScreen() {
     };
   }, [loadEmissions, subscribeToChanges]);
 
-  const submitEmission = async () => {
-    if (!selectedCategory || !emissionAmount || !activityType) {
-      Alert.alert('Error', 'Please select category, activity type, and enter an amount');
-      return;
+ // HomeScreen.js - REPLACE submitEmission function
+const submitEmission = async () => {
+  if (!selectedCategory || !emissionAmount || !activityType) {
+    Alert.alert('Error', 'Please select category, activity type, and enter an amount');
+    return;
+  }
+
+  setSubmitting(true);
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
     }
 
-    setSubmitting(true);
+    console.log('🚀 Calculating emissions...');
     
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('User not authenticated');
+    // 🔥 USE EmissionSyncService directly
+    const result = await EmissionSyncService.addEmission(
+      selectedCategory,
+      activityType,
+      parseFloat(emissionAmount),
+      {
+        unit: categories.find(c => c.id === selectedCategory)
+          ?.activities.find(a => a.id === activityType)?.unit || 'units'
       }
+    );
 
-      console.log('🚀 Calculating emissions using EmissionService...');
-      console.log(`Category: ${selectedCategory}, Activity: ${activityType}, Amount: ${emissionAmount}`);
-
-      // Use the EmissionService to calculate emissions
-      const result = await EmissionService.calculateEmissions(
-        selectedCategory,
-        activityType,
-        parseFloat(emissionAmount),
-        {}
+    if (result.success) {
+      const pointsAwarded = Math.floor(result.emission.amount * 2);
+      
+      Alert.alert(
+        'Success! 🎉', 
+        `Emission logged: ${result.emission.amount.toFixed(2)} kg CO₂\n` +
+        `Data source: ${result.calculation.source}\n` +
+        `Confidence: ${result.calculation.confidence}\n` +
+        `Points earned: ${pointsAwarded} 🪙`
       );
 
-      console.log('📊 EmissionService result:', result);
-
-      if (result.success) {
-        // Store emission in database
-        const { error: emissionError } = await supabase
-          .from('emissions')
-          .insert({
-            user_id: user.id,
-            category: selectedCategory,
-            subcategory: activityType,
-            amount: result.emissions,
-            emission_factor: result.emission_factor,
-            source: result.source.includes('Climatiq') ? 'api' : 'manual',
-            description: `${activityType} - ${emissionAmount} ${result.unit || 'units'}`,
-            metadata: {
-              calculation_details: result.details,
-              confidence: result.confidence,
-              input_amount: parseFloat(emissionAmount)
-            }
-          });
-
-        if (emissionError) {
-          console.error('Error storing emission:', emissionError);
-          throw emissionError;
-        }
-
-        // Update user profile totals
-        const { error: profileError } = await supabase.rpc('increment_user_emissions', {
-          p_user_id: user.id,
-          p_amount: result.emissions
-        });
-
-        if (profileError) {
-          console.warn('Error updating profile:', profileError);
-        }
-
-        // Award eco points
-        const pointsAwarded = Math.floor(result.emissions * 2);
-        await incrementEcoPoints(user.id, pointsAwarded);
-
-        // Reload emissions data
-        await loadEmissions(user.id);
-
-        Alert.alert(
-          'Success! 🎉', 
-          `Emission logged: ${result.emissions.toFixed(2)} kg CO₂\n` +
-          `Data source: ${result.source}\n` +
-          `Confidence: ${result.confidence}\n` +
-          `Points earned: ${pointsAwarded} 🪙`
-        );
-
-        setModalVisible(false);
-        setEmissionAmount('');
-        setSelectedCategory('');
-        setActivityType('');
-      } else {
-        Alert.alert('Error', result.error || 'Failed to calculate emissions');
-      }
-    } catch (error) {
-      console.error('Error submitting emission:', error);
-      Alert.alert('Error', 'Failed to log emission. Please try again.');
-    } finally {
-      setSubmitting(false);
+      setModalVisible(false);
+      setEmissionAmount('');
+      setSelectedCategory('');
+      setActivityType('');
+    } else {
+      Alert.alert('Error', result.error || 'Failed to log emission');
     }
-  };
+  } catch (error) {
+    console.error('Error submitting emission:', error);
+    Alert.alert('Error', 'Failed to log emission');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const DAILY_GOAL = profile?.weekly_goal || 50;
 

@@ -37,6 +37,7 @@ import ChallengesScreen from './src/screens/main/ChallengesScreen';
 import GiftVoucherScreen from './src/screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from './src/screens/main/CarbonOffsetScreen';
 import PaymentScreen from './src/screens/main/PaymentScreen';
+import EmissionSyncService from './src/services/EmissionSyncService';
 
 // Import Supabase
 import { supabase } from './src/api/supabase';
@@ -241,6 +242,23 @@ function AppContent() {
     setIsLoading(false);
   }
 };
+
+  useEffect(() => {
+  const initializeSync = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await EmissionSyncService.initialize(user.id);
+      console.log('✅ EmissionSyncService initialized');
+    }
+  };
+  
+  initializeSync();
+  
+  return () => {
+    EmissionSyncService.cleanup();
+  };
+}, []);
+
 
   useEffect(() => {
     // Set up the real-time listener for auth changes

@@ -17,6 +17,7 @@ import { useTheme } from './src/context/ThemeContext';
 import { useEmissions } from './src/hooks/useEmissions';
 import AvatarUpload from './src/components/profile/AvatarUpload';
 import FriendsList from './src/components/social/FriendsList';
+import EmissionSyncService from './src/services/EmissionSyncService';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
@@ -100,71 +101,70 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const loadEmissionData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Get today's emissions
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+  // REPLACE the loadEmissionData function (around line 95-182)
+const loadEmissionData = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // Use EmissionSyncService instead of manual queries
+      const stats = await EmissionSyncService.syncAllData();
+      
+      if (stats) {
+        setDailyEmissions(stats.daily || 0);
+        setWeeklyEmissions(stats.weekly || 0);
+        setMonthlyEmissions(stats.monthly || 0);
+        setAllTimeEmissions(stats.all_time || 0);
+        setStreak(stats.streak || 0);
+        setTokens(stats.tokens || 0);
         
-        const { data: todayData } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', user.id)
-          .gte('created_at', today.toISOString());
-        
-        const todayTotal = todayData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-        setDailyEmissions(todayTotal);
-        
-        // Get this week's emissions
-        const weekStart = new Date();
-        weekStart.setDate(weekStart.getDate() - 6);
-        weekStart.setHours(0, 0, 0, 0);
-        
-        const { data: weekData } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', user.id)
-          .gte('created_at', weekStart.toISOString());
-        
-        const weekTotal = weekData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-        setWeeklyEmissions(weekTotal);
-        
-        // Get this month's emissions
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
-        
-        const { data: monthData } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', user.id)
-          .gte('created_at', monthStart.toISOString());
-        
-        const monthTotal = monthData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-        setMonthlyEmissions(monthTotal);
-        
-        // Get all time emissions
-        const { data: allTimeData } = await supabase
-          .from('emissions')
-          .select('amount')
-          .eq('user_id', user.id);
-        
-        const allTimeTotal = allTimeData?.reduce((sum, emission) => sum + emission.amount, 0) || 0;
-        setAllTimeEmissions(allTimeTotal);
-        
-        console.log('📊 Emission data loaded:', {
-          daily: todayTotal,
-          weekly: weekTotal,
-          monthly: monthTotal,
-          allTime: allTimeTotal
-        });
+        console.log('📊 ProfileScreen emissions loaded:', stats);
       }
-    } catch (error) {
-      console.error('Error loading emission data:', error);
     }
+  } catch (error) {
+    console.error('Error loading emission data:', error);
+  }
+};
+
+// ADD real-time listener in useEffect (around line 74)
+useEffect(() => {
+  loadUserData();
+  loadEmissionData();
+  checkPremiumStatus();
+  
+  // ADD THIS: Subscribe to emission updates
+  const unsubscribe = EmissionSyncService.subscribe((event, data) => {
+    console.log('🔔 ProfileScreen received update:', event);
+    if (event === 'data_synced') {
+      // Update state when data syncs
+      setDailyEmissions(data.daily || 0);
+      setWeeklyEmissions(data.weekly || 0);
+      setMonthlyEmissions(data.monthly || 0);
+      setAllTimeEmissions(data.all_time || 0);
+      setStreak(data.streak || 0);
+      setTokens(data.tokens || 0);
+    }
+  });
+  
+  // Subscribe to real-time updates from database
+  const subscription = supabase
+    .channel('profile_emissions')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'emissions',
+      filter: `user_id=eq.${user?.id}`,
+    }, () => {
+      console.log('Emissions updated, reloading...');
+      loadEmissionData(); // Reload when emissions change
+    })
+    .subscribe();
+
+  return () => {
+    unsubscribe();
+    subscription.unsubscribe();
   };
+}, [user?.id]);
+
 
   const checkPremiumStatus = async () => {
     try {
