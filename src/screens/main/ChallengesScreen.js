@@ -1,4 +1,4 @@
-// src/screens/main/ChallengesScreen.js - PROPERLY CONNECTED TO BACKEND
+// src/screens/main/ChallengesScreen.js - WITH CUSTOM CHALLENGES FEATURE
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -12,10 +12,13 @@ import {
   Share,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import the social components (with fallback)
 let ChallengeCard, ShareButton;
@@ -25,8 +28,16 @@ try {
 } catch (error) {
   console.warn('Social components not available, using fallbacks');
   // Fallback components
-  ChallengeCard = ({ challenge, isJoined, onJoin, onShare, onViewDetails }) => (
+  ChallengeCard = ({ challenge, isJoined, onJoin, onShare, onViewDetails, onDelete, showDelete }) => (
     <View style={styles.fallbackCard}>
+      {showDelete && (
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={onDelete}
+        >
+          <Ionicons name="trash-outline" size={20} color="#EF4444" />
+        </TouchableOpacity>
+      )}
       <Text style={styles.fallbackTitle}>{challenge.emoji} {challenge.title}</Text>
       <Text style={styles.fallbackDesc}>{challenge.description}</Text>
       <TouchableOpacity 
@@ -80,10 +91,26 @@ export default function ChallengesScreen() {
   // State management
   const [challenges, setChallenges] = useState([]);
   const [joinedChallenges, setJoinedChallenges] = useState([]);
+  const [customChallenges, setCustomChallenges] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Custom challenge modal state
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [newChallenge, setNewChallenge] = useState({
+    title: '',
+    description: '',
+    targetValue: '',
+    targetUnit: 'days',
+    rewardTokens: '10',
+    emoji: '🎯'
+  });
+
+  // Emoji and unit options
+  const availableEmojis = ['🎯', '🌟', '💪', '🔥', '⚡', '🌱', '♻️', '🚴', '🌍', '💚'];
+  const unitOptions = ['days', 'kg CO₂', 'km', 'items', 'meals'];
 
   useEffect(() => {
     initializeScreen();
@@ -107,6 +134,7 @@ export default function ChallengesScreen() {
       await loadChallengesFromBackend();
       if (currentUser) {
         await loadUserChallenges(currentUser.id);
+        await loadCustomChallenges();
       }
     } catch (error) {
       console.error('Error refreshing:', error);
@@ -128,6 +156,7 @@ export default function ChallengesScreen() {
       if (user) {
         await ensureUserProfile(user);
         await loadUserChallenges(user.id);
+        await loadCustomChallenges();
       }
     } catch (error) {
       console.error('Error in checkUser:', error);
@@ -136,7 +165,6 @@ export default function ChallengesScreen() {
 
   const ensureUserProfile = async (user) => {
     try {
-      // First check if profile exists
       const { data: profile, error: fetchError } = await supabase
         .from('user_profiles')
         .select('id')
@@ -148,7 +176,6 @@ export default function ChallengesScreen() {
         return;
       }
 
-      // If profile doesn't exist, create it
       if (!profile) {
         console.log('Creating user profile...');
         const { data: newProfile, error: insertError } = await supabase
@@ -167,8 +194,6 @@ export default function ChallengesScreen() {
 
         if (insertError) {
           console.error('Error creating user profile:', insertError);
-          // Try alternative approach - user might already exist in auth.users
-          console.log('Profile creation failed, user might already be set up');
         } else {
           console.log('User profile created successfully:', newProfile);
         }
@@ -180,23 +205,21 @@ export default function ChallengesScreen() {
 
   const loadChallengesFromBackend = async () => {
     try {
-      // Try to load from backend first
       const { data: backendChallenges, error } = await supabase
         .from('challenges')
         .select('*')
         .eq('is_active', true)
+        .is('created_by', null) // Only load system challenges
         .order('created_at', { ascending: false });
 
       if (error) {
         console.log('Backend challenges not available, using fallback data:', error.message);
-        // Use fallback data if backend is not set up yet
         setChallenges(getFallbackChallenges());
       } else if (backendChallenges && backendChallenges.length > 0) {
         console.log('Loaded challenges from backend:', backendChallenges.length);
         setChallenges(backendChallenges);
       } else {
         console.log('No challenges in backend, using fallback data');
-        // Insert fallback challenges into backend
         await insertFallbackChallenges();
         setChallenges(getFallbackChallenges());
       }
@@ -204,6 +227,127 @@ export default function ChallengesScreen() {
       console.error('Error loading challenges:', error);
       setChallenges(getFallbackChallenges());
     }
+  };
+
+  // ⭐ CUSTOM CHALLENGES FUNCTIONS
+  const loadCustomChallenges = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('challenges')
+        .select('*')
+        .eq('created_by', user.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.log('Using local custom challenges');
+        const stored = await AsyncStorage.getItem(`custom_challenges_${user.id}`);
+        if (stored) {
+          setCustomChallenges(JSON.parse(stored));
+        }
+      } else {
+        setCustomChallenges(data || []);
+      }
+    } catch (error) {
+      console.error('Error loading custom challenges:', error);
+    }
+  };
+
+  const createCustomChallenge = async () => {
+    if (!newChallenge.title || !newChallenge.description || !newChallenge.targetValue) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to create challenges');
+        return;
+      }
+
+      const challengeData = {
+        id: `custom-${Date.now()}`,
+        title: newChallenge.title,
+        description: newChallenge.description,
+        emoji: newChallenge.emoji,
+        challenge_type: 'individual',
+        target_value: parseFloat(newChallenge.targetValue),
+        target_unit: newChallenge.targetUnit,
+        reward_tokens: parseInt(newChallenge.rewardTokens),
+        is_active: true,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('challenges')
+        .insert(challengeData);
+
+      if (error) {
+        const updatedCustom = [...customChallenges, challengeData];
+        setCustomChallenges(updatedCustom);
+        await AsyncStorage.setItem(`custom_challenges_${user.id}`, JSON.stringify(updatedCustom));
+      } else {
+        await loadCustomChallenges();
+      }
+
+      setNewChallenge({
+        title: '',
+        description: '',
+        targetValue: '',
+        targetUnit: 'days',
+        rewardTokens: '10',
+        emoji: '🎯'
+      });
+      setShowCustomModal(false);
+      
+      Alert.alert('Success! 🎉', 'Your custom challenge has been created!');
+    } catch (error) {
+      console.error('Error creating custom challenge:', error);
+      Alert.alert('Error', 'Failed to create challenge. Please try again.');
+    }
+  };
+
+  const deleteCustomChallenge = async (challengeId) => {
+    Alert.alert(
+      'Delete Challenge',
+      'Are you sure you want to delete this custom challenge?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('challenges')
+                .delete()
+                .eq('id', challengeId);
+
+              if (error) {
+                const updated = customChallenges.filter(c => c.id !== challengeId);
+                setCustomChallenges(updated);
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  await AsyncStorage.setItem(`custom_challenges_${user.id}`, JSON.stringify(updated));
+                }
+              } else {
+                await loadCustomChallenges();
+              }
+              
+              Alert.alert('Deleted', 'Challenge removed successfully');
+            } catch (error) {
+              console.error('Error deleting challenge:', error);
+              Alert.alert('Error', 'Failed to delete challenge');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const getFallbackChallenges = () => [
@@ -234,24 +378,12 @@ export default function ChallengesScreen() {
     { 
       id: 'vegan-challenge',
       title: 'Vegan Challenge',
-      description: 'Eat only plant-based meals for 3 consecutive days. Track your food emissions and see the difference!',
+      description: 'Eat only plant-based meals for 3 consecutive days.',
       emoji: '🌱',
       challenge_type: 'global',
       target_value: 3,
       target_unit: 'days',
       reward_tokens: 75,
-      is_active: true,
-      created_at: new Date().toISOString(),
-    },
-    { 
-      id: 'energy-saver',
-      title: 'Energy Saver',
-      description: 'Reduce your home energy consumption by 30% this week compared to your average.',
-      emoji: '⚡',
-      challenge_type: 'individual',
-      target_value: 30,
-      target_unit: '% reduction',
-      reward_tokens: 60,
       is_active: true,
       created_at: new Date().toISOString(),
     },
@@ -266,8 +398,6 @@ export default function ChallengesScreen() {
 
       if (error) {
         console.error('Error inserting fallback challenges:', error);
-      } else {
-        console.log('Fallback challenges inserted successfully');
       }
     } catch (error) {
       console.error('Error in insertFallbackChallenges:', error);
@@ -292,7 +422,6 @@ export default function ChallengesScreen() {
         const joinedIds = userChallenges.map(uc => uc.challenge_id);
         setJoinedChallenges(joinedIds);
         
-        // Update challenge progress
         setChallenges(prev => prev.map(challenge => {
           const userChallenge = userChallenges.find(uc => uc.challenge_id === challenge.id);
           if (userChallenge) {
@@ -336,26 +465,16 @@ export default function ChallengesScreen() {
 
               if (error) {
                 console.error('Error joining challenge:', error);
-                
-                // Check if it's a foreign key error
-                if (error.message.includes('foreign key') || error.code === '23503') {
-                  Alert.alert(
-                    'Setup Required', 
-                    'Your account needs to be set up. Please try refreshing the app or contact support.'
-                  );
-                } else {
-                  Alert.alert('Error', `Failed to join challenge: ${error.message}`);
-                }
+                Alert.alert('Error', 'Failed to join challenge. Please try again.');
                 return;
               }
 
-              // Update local state
               setJoinedChallenges(prev => [...prev, challenge.id]);
               earnTokens(5);
               Alert.alert('Success', `You joined the ${challenge.title} challenge!`);
             } catch (error) {
               console.error('Error joining challenge:', error);
-              Alert.alert('Error', 'Failed to join challenge. Please try again.');
+              Alert.alert('Error', 'Failed to join challenge.');
             }
           }
         }
@@ -401,12 +520,13 @@ export default function ChallengesScreen() {
           const currentProgress = c.currentProgress || 0;
           return isJoined && currentProgress >= targetValue;
         });
+      case 'custom':
+        return customChallenges;
       default:
         return challenges;
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.background }]}>
@@ -417,7 +537,6 @@ export default function ChallengesScreen() {
     );
   }
 
-  // Show login required message if user is not authenticated
   if (!currentUser) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -483,9 +602,9 @@ export default function ChallengesScreen() {
           />
         </View>
 
-        {/* Tab Selector */}
+        {/* Tab Selector - WITH CUSTOM TAB */}
         <View style={styles.tabContainer}>
-          {['all', 'joined', 'completed'].map((tab) => (
+          {['all', 'joined', 'completed', 'custom'].map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[
@@ -507,7 +626,7 @@ export default function ChallengesScreen() {
                   }
                 ]}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'custom' ? '✨ Custom' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
@@ -527,16 +646,29 @@ export default function ChallengesScreen() {
           </View>
           <View style={[styles.statCard, { backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.7)' : theme.cardBackground }]}>
             <Text style={[styles.statValue, { color: theme.accentText }]}>
-              {challenges.reduce((sum, c) => {
+              {activeTab === 'custom' ? customChallenges.length : challenges.reduce((sum, c) => {
                 if (joinedChallenges.includes(c.id)) {
                   return sum + (c.reward_tokens || c.rewardTokens || 0);
                 }
                 return sum;
               }, 0)}
             </Text>
-            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Potential Tokens</Text>
+            <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+              {activeTab === 'custom' ? 'Custom' : 'Potential Tokens'}
+            </Text>
           </View>
         </View>
+
+        {/* Create Custom Challenge Button */}
+        {activeTab === 'custom' && (
+          <TouchableOpacity
+            style={[styles.createButton, { backgroundColor: theme.accentText }]}
+            onPress={() => setShowCustomModal(true)}
+          >
+            <Ionicons name="add-circle-outline" size={24} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Create Custom Challenge</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Challenges List */}
         <View style={styles.challengesList}>
@@ -545,7 +677,6 @@ export default function ChallengesScreen() {
               key={challenge.id}
               challenge={{
                 ...challenge,
-                // Normalize field names for compatibility
                 challengeType: challenge.challenge_type || challenge.challengeType,
                 targetValue: challenge.target_value || challenge.targetValue,
                 targetUnit: challenge.target_unit || challenge.targetUnit,
@@ -557,6 +688,8 @@ export default function ChallengesScreen() {
               onJoin={() => handleJoinChallenge(challenge)}
               onShare={() => handleShareChallenge(challenge)}
               onViewDetails={() => handleViewDetails(challenge)}
+              onDelete={activeTab === 'custom' ? () => deleteCustomChallenge(challenge.id) : undefined}
+              showDelete={activeTab === 'custom'}
             />
           ))}
         </View>
@@ -569,11 +702,143 @@ export default function ChallengesScreen() {
                 ? "You haven't joined any challenges yet"
                 : activeTab === 'completed'
                 ? "No completed challenges yet"
+                : activeTab === 'custom'
+                ? "No custom challenges yet. Create one!"
                 : "No challenges available"}
             </Text>
           </View>
         )}
       </ScrollView>
+
+      {/* Custom Challenge Creation Modal */}
+      <Modal
+        visible={showCustomModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCustomModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
+                Create Custom Challenge
+              </Text>
+
+              {/* Emoji Picker */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Choose Icon</Text>
+              <View style={styles.emojiContainer}>
+                {availableEmojis.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[
+                      styles.emojiOption,
+                      newChallenge.emoji === emoji && styles.emojiSelected
+                    ]}
+                    onPress={() => setNewChallenge({...newChallenge, emoji})}
+                  >
+                    <Text style={styles.emojiText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Title Input */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Challenge Title *</Text>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
+                  color: theme.primaryText
+                }]}
+                placeholder="e.g., Walk 10,000 steps daily"
+                placeholderTextColor={theme.secondaryText}
+                value={newChallenge.title}
+                onChangeText={(text) => setNewChallenge({...newChallenge, title: text})}
+              />
+
+              {/* Description Input */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Description *</Text>
+              <TextInput
+                style={[styles.textArea, { 
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
+                  color: theme.primaryText
+                }]}
+                placeholder="Describe your challenge goals..."
+                placeholderTextColor={theme.secondaryText}
+                value={newChallenge.description}
+                onChangeText={(text) => setNewChallenge({...newChallenge, description: text})}
+                multiline
+                numberOfLines={4}
+              />
+
+              {/* Target Value */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Target Value *</Text>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
+                  color: theme.primaryText
+                }]}
+                placeholder="e.g., 7"
+                placeholderTextColor={theme.secondaryText}
+                value={newChallenge.targetValue}
+                onChangeText={(text) => setNewChallenge({...newChallenge, targetValue: text})}
+                keyboardType="numeric"
+              />
+
+              {/* Unit Picker */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Unit</Text>
+              <View style={styles.unitContainer}>
+                {unitOptions.map(unit => (
+                  <TouchableOpacity
+                    key={unit}
+                    style={[
+                      styles.unitOption,
+                      { borderColor: theme.accentText },
+                      newChallenge.targetUnit === unit && { backgroundColor: theme.accentText }
+                    ]}
+                    onPress={() => setNewChallenge({...newChallenge, targetUnit: unit})}
+                  >
+                    <Text style={[
+                      styles.unitText,
+                      { color: newChallenge.targetUnit === unit ? '#FFFFFF' : theme.accentText }
+                    ]}>
+                      {unit}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Reward Tokens */}
+              <Text style={[styles.inputLabel, { color: theme.secondaryText }]}>Reward Tokens</Text>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
+                  color: theme.primaryText
+                }]}
+                placeholder="10"
+                placeholderTextColor={theme.secondaryText}
+                value={newChallenge.rewardTokens}
+                onChangeText={(text) => setNewChallenge({...newChallenge, rewardTokens: text})}
+                keyboardType="numeric"
+              />
+
+              {/* Buttons */}
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton, { borderColor: theme.border }]}
+                  onPress={() => setShowCustomModal(false)}
+                >
+                  <Text style={[styles.buttonText, { color: theme.secondaryText }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.createChallengeButton, { backgroundColor: theme.accentText }]}
+                  onPress={createCustomChallenge}
+                >
+                  <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Create</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -613,16 +878,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     marginBottom: 20,
+    gap: 8,
   },
   tab: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 20,
-    marginHorizontal: 5,
     alignItems: 'center',
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -645,6 +910,21 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     marginTop: 5,
+  },
+  createButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  createButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   challengesList: {
     paddingBottom: 20,
@@ -680,6 +960,109 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
   },
+  
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '85%',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 15,
+    marginBottom: 8,
+  },
+  input: {
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  textArea: {
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  emojiContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 10,
+  },
+  emojiOption: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  emojiSelected: {
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  emojiText: {
+    fontSize: 24,
+  },
+  unitContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  unitOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  unitText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  createChallengeButton: {
+    // backgroundColor set inline
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
   // Fallback component styles
   fallbackCard: {
     backgroundColor: '#FFFFFF',
@@ -691,6 +1074,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    position: 'relative',
   },
   fallbackTitle: {
     fontSize: 18,
@@ -713,5 +1097,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    zIndex: 10,
   },
 });

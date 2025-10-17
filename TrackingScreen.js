@@ -475,13 +475,14 @@ export default function TrackingScreen() {
                 </Text>
                 <View style={styles.optionContainer}>
                   {[
-                    { key: 'car_petrol', label: 'Car (Petrol)', emoji: '🚗' },
-                    { key: 'car_diesel', label: 'Car (Diesel)', emoji: '🚙' },
-                    { key: 'car_electric', label: 'Electric Car', emoji: '⚡' },
-                    { key: 'bus', label: 'Bus', emoji: '🚌' },
-                    { key: 'train', label: 'Train', emoji: '🚆' },
-                    { key: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' }
-                  ].map((mode) => (
+                      { key: 'car_petrol', label: 'Car (Petrol)', emoji: '🚗' },
+                      { key: 'car_diesel', label: 'Car (Diesel)', emoji: '🚙' },
+                      { key: 'car_electric', label: 'Electric Car', emoji: '⚡' },
+                      { key: 'bus', label: 'Bus', emoji: '🚌' },
+                      { key: 'train', label: 'Train', emoji: '🚆' },
+                      { key: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' },  // ← ADD COMMA HERE
+                      { key: 'flight_domestic', label: 'Flight', emoji: '✈️' }
+                    ].map((mode) => (
                     <TouchableOpacity
                       key={mode.key}
                       style={[

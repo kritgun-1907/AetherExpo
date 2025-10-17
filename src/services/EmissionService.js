@@ -55,55 +55,55 @@ class EmissionService {
   }
 
   getMinimalFallbackFactors() {
-    return {
-      transport: {
-        car: { factor: 0.21, unit: 'km', label: 'Car', source: 'IPCC 2021' },
-        vehicle: { factor: 0.21, unit: 'km', label: 'Vehicle', source: 'IPCC 2021' },
-        car_petrol: { factor: 0.21, unit: 'km', label: 'Petrol Car', source: 'IPCC 2021' },
-        car_diesel: { factor: 0.17, unit: 'km', label: 'Diesel Car', source: 'IPCC 2021' },
-        car_electric: { factor: 0.05, unit: 'km', label: 'Electric Car', source: 'IPCC 2021' },
-        bus: { factor: 0.089, unit: 'km', label: 'Bus', source: 'DEFRA 2023' },
-        train: { factor: 0.041, unit: 'km', label: 'Train', source: 'DEFRA 2023' },
-        motorcycle: { factor: 0.113, unit: 'km', label: 'Motorcycle', source: 'DEFRA 2023' },
-        flight_domestic: { factor: 0.255, unit: 'km', label: 'Domestic Flight', source: 'ICAO' },
-        flight_international: { factor: 0.195, unit: 'km', label: 'International Flight', source: 'ICAO' },
-        automobile: { factor: 0.21, unit: 'km', label: 'Automobile', source: 'IPCC 2021' }
-      },
-      food: {
-        meat: { factor: 27, unit: 'kg', label: 'Meat (Beef)', source: 'FAO' },
-        beef: { factor: 27, unit: 'kg', label: 'Beef', source: 'FAO' },
-        chicken: { factor: 6.9, unit: 'kg', label: 'Chicken', source: 'FAO' },
-        pork: { factor: 7.19, unit: 'kg', label: 'Pork', source: 'FAO' },
-        fish: { factor: 6.1, unit: 'kg', label: 'Fish', source: 'FAO' },
-        vegetarian: { factor: 2, unit: 'kg', label: 'Vegetarian Meal', source: 'FAO' },
-        vegan: { factor: 1.5, unit: 'kg', label: 'Vegan Meal', source: 'FAO' },
-        dairy: { factor: 1.9, unit: 'L', label: 'Dairy', source: 'FAO' },
-        vegetables: { factor: 2, unit: 'kg', label: 'Vegetables', source: 'FAO' }
-      },
-      home: {
-        electricity: { factor: 0.233, unit: 'kWh', label: 'Electricity', source: 'IEA 2023' },
-        gas: { factor: 2.04, unit: 'm³', label: 'Natural Gas', source: 'EPA' },
-        natural_gas: { factor: 2.04, unit: 'm³', label: 'Natural Gas', source: 'EPA' },
-        oil: { factor: 2.52, unit: 'L', label: 'Heating Oil', source: 'EPA' },
-        fuel_oil: { factor: 2.52, unit: 'L', label: 'Fuel Oil', source: 'EPA' },
-        fuel: { factor: 2.52, unit: 'L', label: 'Fuel', source: 'EPA' },
-        heating: { factor: 2.04, unit: 'm³', label: 'Central Heating', source: 'EPA' },
-        central_heating: { factor: 2.04, unit: 'm³', label: 'Central Heating', source: 'EPA' },
-        water: { factor: 0.0003, unit: 'L', label: 'Water', source: 'EPA' }
-      },
-      shopping: {
-        clothing: { factor: 8.11, unit: 'item', label: 'Clothing', source: 'WRI' },
-        electronics: { factor: 70, unit: 'item', label: 'Electronics', source: 'WRI' },
-        furniture: { factor: 25, unit: 'item', label: 'Furniture', source: 'WRI' },
-        groceries: { factor: 2.5, unit: 'kg', label: 'Groceries', source: 'WRI' },
-        plastic: { factor: 6, unit: 'kg', label: 'Plastic Products', source: 'WRI' }
-      },
-      education: {
-        driving_school: { factor: 5, unit: 'hour', label: 'Driving School', source: 'Estimate' },
-        flight_training: { factor: 50, unit: 'hour', label: 'Flight Training', source: 'Estimate' }
-      }
-    };
-  }
+  return {
+    transport: {
+      car: { factor: 0.21, unit: 'km', label: 'Car', source: 'IPCC 2021' },
+      vehicle: { factor: 0.21, unit: 'km', label: 'Vehicle', source: 'IPCC 2021' },
+      car_petrol: { factor: 0.21, unit: 'km', label: 'Petrol Car', source: 'IPCC 2021' },
+      car_diesel: { factor: 0.17, unit: 'km', label: 'Diesel Car', source: 'IPCC 2021' },
+      car_electric: { factor: 0.05, unit: 'km', label: 'Electric Car', source: 'IPCC 2021' },
+      bus: { factor: 0.089, unit: 'km', label: 'Bus', source: 'DEFRA 2023' },
+      train: { factor: 0.041, unit: 'km', label: 'Train', source: 'DEFRA 2023' },
+      motorcycle: { factor: 0.113, unit: 'km', label: 'Motorcycle', source: 'DEFRA 2023' }, // ← ADD THIS
+      flight_domestic: { factor: 0.255, unit: 'km', label: 'Domestic Flight', source: 'ICAO' },
+      flight_international: { factor: 0.195, unit: 'km', label: 'International Flight', source: 'ICAO' },
+      automobile: { factor: 0.21, unit: 'km', label: 'Automobile', source: 'IPCC 2021' }
+    },
+    food: {
+      meat: { factor: 27, unit: 'kg', label: 'Meat (Beef)', source: 'FAO' },
+      beef: { factor: 27, unit: 'kg', label: 'Beef', source: 'FAO' },
+      chicken: { factor: 6.9, unit: 'kg', label: 'Chicken', source: 'FAO' },
+      pork: { factor: 7.19, unit: 'kg', label: 'Pork', source: 'FAO' },
+      fish: { factor: 6.1, unit: 'kg', label: 'Fish', source: 'FAO' },
+      vegetarian: { factor: 2, unit: 'kg', label: 'Vegetarian Meal', source: 'FAO' },
+      vegan: { factor: 1.5, unit: 'kg', label: 'Vegan Meal', source: 'FAO' },
+      dairy: { factor: 1.9, unit: 'L', label: 'Dairy', source: 'FAO' },
+      vegetables: { factor: 2, unit: 'kg', label: 'Vegetables', source: 'FAO' }
+    },
+    home: {
+      electricity: { factor: 0.233, unit: 'kWh', label: 'Electricity', source: 'IEA 2023' },
+      gas: { factor: 2.04, unit: 'm³', label: 'Natural Gas', source: 'EPA' },
+      natural_gas: { factor: 2.04, unit: 'm³', label: 'Natural Gas', source: 'EPA' },
+      oil: { factor: 2.52, unit: 'L', label: 'Heating Oil', source: 'EPA' },
+      fuel_oil: { factor: 2.52, unit: 'L', label: 'Fuel Oil', source: 'EPA' },
+      fuel: { factor: 2.52, unit: 'L', label: 'Fuel', source: 'EPA' },
+      heating: { factor: 2.04, unit: 'm³', label: 'Central Heating', source: 'EPA' },
+      central_heating: { factor: 2.04, unit: 'm³', label: 'Central Heating', source: 'EPA' },
+      water: { factor: 0.0003, unit: 'L', label: 'Water', source: 'EPA' }
+    },
+    shopping: {
+      clothing: { factor: 8.11, unit: 'item', label: 'Clothing', source: 'WRI' },
+      electronics: { factor: 70, unit: 'item', label: 'Electronics', source: 'WRI' },
+      furniture: { factor: 25, unit: 'item', label: 'Furniture', source: 'WRI' },
+      groceries: { factor: 2.5, unit: 'kg', label: 'Groceries', source: 'WRI' },
+      plastic: { factor: 6, unit: 'kg', label: 'Plastic Products', source: 'WRI' }
+    },
+    education: {
+      driving_school: { factor: 5, unit: 'hour', label: 'Driving School', source: 'Estimate' },
+      flight_training: { factor: 50, unit: 'hour', label: 'Flight Training', source: 'Estimate' }
+    }
+  };
+}
 
   // UPDATED ACTIVITY IDs WITH YOUR VERIFIED FINDINGS
   getClimatiqActivityId(category, activity) {
@@ -152,12 +152,12 @@ class EmissionService {
           unit: 'km'
         },
         motorcycle: {
-          activity_id: 'passenger_vehicle-vehicle_type_motorcycle-fuel_source_na-engine_size_na-vehicle_age_na-vehicle_weight_na',
-          parameter_type: 'distance',
-          unit: 'km'
-        },
+        activity_id: 'passenger_vehicle-vehicle_type_motorcycle-fuel_source_na-engine_size_na-vehicle_age_na-vehicle_weight_na',
+        parameter_type: 'distance',
+        unit: 'km'
+      },
         flight_domestic: {
-          activity_id: 'passenger_flight-route_type_domestic-aircraft_type_na-distance_na-class_na-rf_na',
+          activity_id: 'passenger_flight-route_type_domestic-aircraft_type_na-distance_na-class_na-rf_included-distance_uplift_included',
           parameter_type: 'distance',
           unit: 'km'
         },
@@ -282,42 +282,26 @@ class EmissionService {
     return mappings[category]?.[activity] || null;
   }
 
-  async calculateEmissions(category, activity, amount, options = {}) {
-    console.log(`🔍 Calculating emissions: ${category}/${activity} - ${amount} ${options.unit || ''}`);
-    
-    const cacheKey = `${category}_${activity}_${amount}_${JSON.stringify(options)}`;
-    
-    if (this.cache.has(cacheKey)) {
-      const cached = this.cache.get(cacheKey);
-      if (Date.now() - cached.timestamp < this.cacheExpiry) {
-        console.log('✅ Using cached data');
-        return cached.data;
-      }
-    }
+  // In EmissionService.js, update the calculateEmissions method:
 
-    // Try Climatiq API first
-    try {
-      console.log('🌐 Trying Climatiq API...');
-      const climatiqResult = await this.calculateWithClimatiq(category, activity, amount, options);
-      
-      if (climatiqResult.success) {
-        console.log('✅ Climatiq API success:', climatiqResult.emissions, 'kg CO2e');
-        
-        this.cache.set(cacheKey, {
-          data: climatiqResult,
-          timestamp: Date.now()
-        });
-        
-        await this.storeCalculation(category, activity, amount, climatiqResult.emissions, 'climatiq');
-        
-        return climatiqResult;
-      }
-    } catch (error) {
-      console.warn('⚠️ Climatiq API failed:', error.message);
-      console.log('📊 Falling back to local emission factors...');
+async calculateEmissions(category, activity, amount, options = {}) {
+  console.log(`🔍 Calculating emissions: ${category}/${activity} - ${amount} ${options.unit || ''}`);
+  
+  const cacheKey = `${category}_${activity}_${amount}_${JSON.stringify(options)}`;
+  
+  if (this.cache.has(cacheKey)) {
+    const cached = this.cache.get(cacheKey);
+    if (Date.now() - cached.timestamp < this.cacheExpiry) {
+      console.log('✅ Using cached data');
+      return cached.data;
     }
+  }
 
-    // Fallback to local factors
+  // ⭐ SKIP CLIMATIQ FOR SHOPPING
+  // Reason: Climatiq shopping activities require money (USD), but app tracks items
+  // Using local factors: clothing=8.11kg, electronics=70kg, furniture=25kg per item
+  if (category === 'shopping') {
+    console.log('📊 Shopping category - bypassing Climatiq, using local emission factors');
     const fallbackResult = await this.calculateWithFallback(category, activity, amount, options);
     
     if (fallbackResult.success) {
@@ -329,6 +313,41 @@ class EmissionService {
     
     return fallbackResult;
   }
+
+  // Try Climatiq API first for other categories
+  try {
+    console.log('🌐 Trying Climatiq API...');
+    const climatiqResult = await this.calculateWithClimatiq(category, activity, amount, options);
+    
+    if (climatiqResult.success) {
+      console.log('✅ Climatiq API success:', climatiqResult.emissions, 'kg CO2e');
+      
+      this.cache.set(cacheKey, {
+        data: climatiqResult,
+        timestamp: Date.now()
+      });
+      
+      await this.storeCalculation(category, activity, amount, climatiqResult.emissions, 'climatiq');
+      
+      return climatiqResult;
+    }
+  } catch (error) {
+    console.warn('⚠️ Climatiq API failed:', error.message);
+    console.log('📊 Falling back to local emission factors...');
+  }
+
+  // Fallback to local factors
+  const fallbackResult = await this.calculateWithFallback(category, activity, amount, options);
+  
+  if (fallbackResult.success) {
+    this.cache.set(cacheKey, {
+      data: fallbackResult,
+      timestamp: Date.now()
+    });
+  }
+  
+  return fallbackResult;
+}
 
   async calculateWithClimatiq(category, activity, amount, options = {}) {
   const activityMapping = this.getClimatiqActivityId(category, activity);

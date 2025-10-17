@@ -16,6 +16,7 @@ import { supabase, addEmission, incrementEcoPoints } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import { useEmissions } from './src/hooks/useEmissions';
 import EmissionService from './src/services/EmissionService';
+import EmissionSyncService from './src/services/EmissionSyncService';
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
 
@@ -527,17 +528,47 @@ const submitEmission = async () => {
         indicatorStyle={isDarkMode ? "white" : "black"}
         contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={[styles.greeting, { color: theme.primaryText }]}>
-              Hello, {userName}! 👋
-            </Text>
-            <Text style={[styles.subGreeting, { color: theme.secondaryText }]}>
-              {profile?.is_premium ? '⭐ Premium Member' : 'Let\'s track your carbon footprint'}
-            </Text>
-          </View>
-          <StreakCounter streak={streak} theme={theme} isDarkMode={isDarkMode} />
-        </View>
+          <View style={styles.header}>
+      <View style={styles.headerLeft}>
+        <Text style={[styles.greeting, { color: theme.primaryText }]}>
+          Hello, {userName}! 👋
+        </Text>
+        <Text style={[styles.subGreeting, { color: theme.secondaryText }]}>
+          {profile?.is_premium ? '⭐ Premium Member' : 'Let\'s track your carbon footprint'}
+        </Text>
+      </View>
+      
+      {/* Coins Display - Clean minimal design */}
+      <View style={styles.headerRight}>
+        <TouchableOpacity 
+          style={[
+            styles.coinsContainer,
+            { 
+              backgroundColor: isDarkMode 
+                ? 'rgba(251, 191, 36, 0.15)' 
+                : 'rgba(251, 191, 36, 0.1)',
+              borderColor: isDarkMode 
+                ? 'rgba(251, 191, 36, 0.3)' 
+                : 'rgba(251, 191, 36, 0.25)'
+            }
+          ]}
+          onPress={() => {
+            Alert.alert(
+              '🪙 Your Eco-Coins',
+              `Total Coins: ${tokens}\n\nEarn more by:\n• Logging emissions daily\n• Completing challenges\n• Unlocking achievements\n\nRedeem in the Rewards section!`,
+              [{ text: 'Got it!' }]
+            );
+          }}
+        >
+          <Text style={styles.coinIcon}>🪙</Text>
+          <Text style={[styles.coinAmount, { color: '#F59E0B' }]}>
+            {tokens}
+          </Text>
+        </TouchableOpacity>
+        
+        <StreakCounter streak={streak} theme={theme} isDarkMode={isDarkMode} />
+      </View>
+    </View>
 
         <View style={styles.statsRow}>
           <View style={[dynamicStyles.statCard]}>
@@ -859,12 +890,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
   headerLeft: {
     flex: 1,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+    gap: 10,  // Space between coins and streak
   },
   greeting: {
     fontSize: 28,
@@ -1027,6 +1062,31 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 100,
+  },
+  coinsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    gap: 6,
+    minWidth: 70,
+    justifyContent: 'center',
+    // Subtle shadow
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  coinIcon: {
+    fontSize: 18,
+  },
+  coinAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   
   // Modal Styles
