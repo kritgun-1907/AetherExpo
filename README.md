@@ -408,7 +408,7 @@ We welcome contributions! Please follow these steps:
 
 ## 👥 Authors
 
-- Kritgun Sinfh - *Initial work* - [kritgun_1907](https://github.com/kritgun_1907)
+- Kritgun Singh - *Initial work* - [kritgun-1907](https://github.com/kritgun-1907)
 
 ---
 
