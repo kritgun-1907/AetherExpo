@@ -1,4 +1,4 @@
-// src/components/carbon/TripTracker.js - SIMPLE VERSION WITHOUT REANIMATED
+// src/components/carbon/TripTracker.js - FIXED VERSION
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  ScrollView,
-  Modal,
   Platform,
   Dimensions,
   Animated,
@@ -28,6 +26,14 @@ const MINIMIZED_HEIGHT = 80;
 const COLLAPSED_HEIGHT = 200;
 const EXPANDED_HEIGHT = 320;
 
+// 🔥 FIX: Default to user's actual location (Chandigarh)
+const DEFAULT_REGION = {
+  latitude: 30.7333, // Chandigarh
+  longitude: 76.7794,
+  latitudeDelta: 0.01,
+  longitudeDelta: 0.01,
+};
+
 export default function TripTracker({ onTripComplete }) {
   const { theme, isDarkMode } = useTheme();
   const mapRef = useRef(null);
@@ -43,7 +49,8 @@ export default function TripTracker({ onTripComplete }) {
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState(null);
-  const [panelState, setPanelState] = useState('collapsed'); // 'minimized', 'collapsed', 'expanded'
+  const [panelState, setPanelState] = useState('collapsed');
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
   // Animated value for panel
   const panelAnimation = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
@@ -57,14 +64,34 @@ export default function TripTracker({ onTripComplete }) {
     { id: 'car', name: 'Car', icon: 'car', color: '#EF4444' },
   ];
 
-  // Create pan responder for drag gestures
+  // 🔥 FIX: Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (coord1, coord2) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = toRad(coord2.latitude - coord1.latitude);
+    const dLon = toRad(coord2.longitude - coord1.longitude);
+    const lat1 = toRad(coord1.latitude);
+    const lat2 = toRad(coord2.latitude);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    return distance; // Returns distance in km
+  };
+
+  const toRad = (value) => {
+    return (value * Math.PI) / 180;
+  };
+
+  // Pan responder for dragging panel
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
         return Math.abs(gestureState.dy) > 5;
       },
       onPanResponderMove: (_, gestureState) => {
-        // Calculate new height based on drag
         const currentHeight = 
           panelState === 'minimized' ? MINIMIZED_HEIGHT :
           panelState === 'collapsed' ? COLLAPSED_HEIGHT :
@@ -84,7 +111,6 @@ export default function TripTracker({ onTripComplete }) {
         let targetState;
         let targetHeight;
         
-        // Determine target based on position and velocity
         if (velocity > 0.5 || currentHeight < MINIMIZED_HEIGHT + 30) {
           targetState = 'minimized';
           targetHeight = MINIMIZED_HEIGHT;
@@ -107,18 +133,20 @@ export default function TripTracker({ onTripComplete }) {
     })
   ).current;
 
+  // 🔥 FIX: Initialize with proper location
   useEffect(() => {
-    console.log('TripTracker mounted');
+    console.log('🚀 TripTracker mounted');
     initializeLocation();
     
     return () => {
-      console.log('TripTracker unmounting');
+      console.log('🛑 TripTracker unmounting');
       if (locationSubscription) {
         locationSubscription.remove();
       }
     };
   }, []);
 
+  // Timer for elapsed time when tracking
   useEffect(() => {
     let interval;
     if (isTracking) {
@@ -138,139 +166,226 @@ export default function TripTracker({ onTripComplete }) {
     }).start();
   };
 
-  const initializeLocation = async () => {
-    try {
-      console.log('Requesting location permissions...');
-      
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      setPermissionStatus(status);
-      console.log('Permission status:', status);
-      
-      if (status !== 'granted') {
-        Alert.alert(
-          'Location Permission Required',
-          'Please enable location services to use trip tracking.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Open Settings', 
-              onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('app-settings:');
-                } else {
-                  Linking.openSettings();
-                }
+ // In TripTracker.js, replace the initializeLocation function with this:
+
+const initializeLocation = async () => {
+  try {
+    setIsLoadingLocation(true);
+    console.log('📍 Requesting location permissions...');
+    
+    // Request permissions
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    setPermissionStatus(status);
+    console.log('✅ Permission status:', status);
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        'Location Permission Required',
+        'Please enable location services to use trip tracking.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Open Settings', 
+            onPress: () => {
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              } else {
+                Linking.openSettings();
               }
             }
-          ]
-        );
-        return;
-      }
+          }
+        ]
+      );
+      setCurrentLocation(DEFAULT_REGION);
+      setIsLoadingLocation(false);
+      return;
+    }
 
-      console.log('Getting current location...');
+    console.log('📡 Getting current position...');
+    
+    try {
+      // 🔥 FIX: Try multiple times with different accuracy levels
+      let location = null;
       
+      // First try: Best accuracy
       try {
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation,
+          maximumAge: 5000,
           timeout: 10000,
         });
+      } catch (firstError) {
+        console.log('⚠️ First attempt failed, trying high accuracy...');
         
-        if (location && location.coords) {
-          console.log('Got location:', location.coords.latitude, location.coords.longitude);
-          
-          const initialRegion = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          };
-          
-          setCurrentLocation(initialRegion);
-          
-          if (mapRef.current && isMapReady) {
-            setTimeout(() => {
-              mapRef.current.animateToRegion(initialRegion, 1000);
-            }, 100);
-          }
-        }
-      } catch (error) {
-        console.error('Error getting current location:', error);
-        
+        // Second try: High accuracy
         try {
-          const lastLocation = await Location.getLastKnownPositionAsync({});
+          location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+            maximumAge: 10000,
+            timeout: 15000,
+          });
+        } catch (secondError) {
+          console.log('⚠️ Second attempt failed, trying balanced...');
           
-          if (lastLocation && lastLocation.coords) {
-            console.log('Using last known location');
-            const lastRegion = {
-              latitude: lastLocation.coords.latitude,
-              longitude: lastLocation.coords.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            };
-            
-            setCurrentLocation(lastRegion);
-          } else {
-            console.log('No last known location available');
-            Alert.alert(
-              'Location Error',
-              'Unable to get your location. Please ensure GPS is enabled and try again.'
-            );
-          }
-        } catch (lastLocationError) {
-          console.error('Error getting last location:', lastLocationError);
+          // Third try: Balanced
+          location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            maximumAge: 15000,
+            timeout: 20000,
+          });
+        }
+      }
+      
+      if (location && location.coords) {
+        console.log('✅ Got current location:', {
+          lat: location.coords.latitude.toFixed(6),
+          lng: location.coords.longitude.toFixed(6),
+          accuracy: location.coords.accuracy,
+        });
+        
+        // 🔥 FIX: Validate coordinates are not default simulator values
+        const isSanFrancisco = (
+          Math.abs(location.coords.latitude - 37.785834) < 0.001 &&
+          Math.abs(location.coords.longitude - (-122.406417)) < 0.001
+        );
+        
+        if (isSanFrancisco) {
+          console.warn('⚠️ Detected simulator default location (San Francisco)');
+          Alert.alert(
+            'Simulator Location Detected',
+            'You are using simulator default location (San Francisco). ' +
+            'To test with real location:\n\n' +
+            '1. Simulator → Features → Location → Custom Location\n' +
+            '2. Enter: Lat 30.7333, Lng 76.7794 (Chandigarh)\n\n' +
+            'Or test on a physical device for real GPS.',
+            [{ text: 'OK' }]
+          );
+        }
+        
+        const initialRegion = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        };
+        
+        setCurrentLocation(initialRegion);
+        
+        // Animate map to location
+        if (mapRef.current && isMapReady) {
+          setTimeout(() => {
+            mapRef.current.animateToRegion(initialRegion, 1000);
+          }, 100);
         }
       }
     } catch (error) {
-      console.error('Location initialization error:', error);
-      Alert.alert('Error', 'Failed to initialize location services');
+      console.error('❌ Error getting current location:', error);
+      
+      // Try last known location as fallback
+      try {
+        console.log('🔄 Trying last known location...');
+        const lastLocation = await Location.getLastKnownPositionAsync({});
+        
+        if (lastLocation && lastLocation.coords) {
+          console.log('✅ Using last known location');
+          const lastRegion = {
+            latitude: lastLocation.coords.latitude,
+            longitude: lastLocation.coords.longitude,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+          };
+          
+          setCurrentLocation(lastRegion);
+        } else {
+          console.log('⚠️ No last known location, using default');
+          setCurrentLocation(DEFAULT_REGION);
+          Alert.alert(
+            'Location Unavailable',
+            'Using default location (Chandigarh). Please ensure:\n\n' +
+            '• GPS is enabled\n' +
+            '• You have clear view of the sky\n' +
+            '• Location services are on\n' +
+            '• You are on a physical device (not simulator)',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (lastLocationError) {
+        console.error('❌ Error getting last location:', lastLocationError);
+        setCurrentLocation(DEFAULT_REGION);
+      }
     }
-  };
+    
+    setIsLoadingLocation(false);
+  } catch (error) {
+    console.error('❌ Location initialization error:', error);
+    setCurrentLocation(DEFAULT_REGION);
+    setIsLoadingLocation(false);
+    Alert.alert('Error', 'Failed to initialize location services');
+  }
+};
 
+  // 🔥 FIX: Proper location tracking with distance calculation
   const startLocationTracking = async () => {
     try {
-      console.log('Starting location tracking...');
+      console.log('🚀 Starting location tracking...');
       
       if (permissionStatus !== 'granted') {
         Alert.alert('Permission Required', 'Location permission is needed for tracking.');
         return;
       }
       
+      // 🔥 FIX: Use watchPositionAsync for continuous updates
       const subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 2000,
-          distanceInterval: 10,
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000, // Update every second
+          distanceInterval: 5, // Or every 5 meters
         },
         (location) => {
-          console.log('Location update:', location.coords.latitude, location.coords.longitude);
+          console.log('📍 Location update:', {
+            lat: location.coords.latitude.toFixed(6),
+            lng: location.coords.longitude.toFixed(6),
+            speed: location.coords.speed,
+            accuracy: location.coords.accuracy,
+          });
           
           const newCoord = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           };
           
+          // Update current location for map
           setCurrentLocation({
             ...newCoord,
             latitudeDelta: 0.005,
             longitudeDelta: 0.005,
           });
           
-          if (location.coords.speed) {
+          // Update speed (m/s to km/h)
+          if (location.coords.speed && location.coords.speed > 0) {
             setCurrentSpeed(location.coords.speed * 3.6);
           }
           
+          // 🔥 FIX: Add to route and calculate distance
           setRouteCoordinates(prev => {
             const newRoute = [...prev, newCoord];
             
+            // Calculate distance from last point
             if (prev.length > 0) {
               const lastCoord = prev[prev.length - 1];
               const distance = calculateDistance(lastCoord, newCoord);
-              setTotalDistance(prevDistance => prevDistance + distance);
+              
+              // Only add if movement is significant (> 5 meters)
+              if (distance > 0.005) {
+                console.log('📏 Distance added:', (distance * 1000).toFixed(2), 'meters');
+                setTotalDistance(prevDistance => prevDistance + distance);
+              }
             }
             
             return newRoute;
           });
           
+          // 🔥 FIX: Always follow user on map
           if (mapRef.current && isMapReady) {
             mapRef.current.animateToRegion({
               ...newCoord,
@@ -282,100 +397,55 @@ export default function TripTracker({ onTripComplete }) {
       );
       
       setLocationSubscription(subscription);
-      console.log('Location tracking started');
+      console.log('✅ Location tracking started');
     } catch (error) {
-      console.error('Error starting location tracking:', error);
+      console.error('❌ Error starting location tracking:', error);
       Alert.alert('Tracking Error', 'Failed to start tracking. Please try again.');
     }
   };
 
-  const calculateDistance = (coord1, coord2) => {
-    const R = 6371;
-    const dLat = deg2rad(coord2.latitude - coord1.latitude);
-    const dLon = deg2rad(coord2.longitude - coord1.longitude);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(deg2rad(coord1.latitude)) *
-        Math.cos(deg2rad(coord2.latitude)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  const deg2rad = (deg) => {
-    return deg * (Math.PI / 180);
-  };
-
-  const handleStartTracking = async () => {
-    try {
-      console.log('Starting trip with mode:', selectedMode);
-      
-      setIsTracking(true);
-      setElapsedTime(0);
-      setTotalDistance(0);
-      setRouteCoordinates([]);
-      setShowModeSelector(false);
-      
-      // Minimize panel when tracking starts
-      animatePanel(MINIMIZED_HEIGHT, 'minimized');
-      
-      await startLocationTracking();
-      
-      Alert.alert('Tracking Started', `Tracking your ${selectedMode} trip`);
-    } catch (error) {
-      console.error('Failed to start tracking:', error);
-      Alert.alert('Error', 'Failed to start tracking: ' + error.message);
-      setIsTracking(false);
+  const startTracking = async () => {
+    setIsTracking(true);
+    setElapsedTime(0);
+    setTotalDistance(0);
+    setRouteCoordinates([]);
+    
+    if (currentLocation) {
+      setRouteCoordinates([{
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+      }]);
     }
+    
+    await startLocationTracking();
   };
 
-  const handleStopTracking = async () => {
+  const stopTracking = async () => {
     try {
-      console.log('Stopping trip...');
+      setIsTracking(false);
       
       if (locationSubscription) {
         locationSubscription.remove();
         setLocationSubscription(null);
       }
-      
-      const emissions = calculateEmissions(totalDistance, selectedMode);
-      
+
       const completedTrip = {
         mode: selectedMode === 'auto-detect' ? detectModeFromSpeed() : selectedMode,
-        totalDistance: totalDistance,
-        carbonEmissions: emissions,
+        distance: totalDistance,
         duration: elapsedTime,
-        averageSpeed: totalDistance / (elapsedTime / 3600),
-        routeCoordinates: routeCoordinates,
+        emissions: calculateEmissions(totalDistance, selectedMode),
+        route: routeCoordinates,
       };
-      
-      setIsTracking(false);
-      
-      // Expand panel to show results
-      animatePanel(COLLAPSED_HEIGHT, 'collapsed');
-      
+
       Alert.alert(
-        '🎉 Trip Complete!',
-        `Distance: ${completedTrip.totalDistance.toFixed(2)} km\n` +
-        `Mode: ${completedTrip.mode}\n` +
-        `Emissions: ${completedTrip.carbonEmissions.toFixed(2)} kg CO₂\n` +
-        `Duration: ${formatTime(elapsedTime)}`,
+        'Trip Complete',
+        `Distance: ${totalDistance.toFixed(2)} km\nTime: ${formatTime(elapsedTime)}\nEmissions: ${completedTrip.emissions.toFixed(2)} kg CO₂`,
         [
           {
             text: 'Save',
             onPress: async () => {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase.from('emissions').insert({
-                  user_id: user.id,
-                  category: 'transport',
-                  amount: completedTrip.carbonEmissions,
-                  description: `${completedTrip.mode} trip - ${completedTrip.totalDistance.toFixed(2)}km`,
-                });
-              }
-              
-              onTripComplete?.(completedTrip);
+              await saveTripToDatabase(completedTrip);
+              if (onTripComplete) onTripComplete(completedTrip);
               resetTrip();
               Alert.alert('Success', 'Trip saved!');
             }
@@ -394,9 +464,13 @@ export default function TripTracker({ onTripComplete }) {
   };
 
   const detectModeFromSpeed = () => {
-    const avgSpeed = totalDistance / (elapsedTime / 3600);
+    if (totalDistance === 0 || elapsedTime === 0) return 'walk';
+    
+    const avgSpeed = (totalDistance / (elapsedTime / 3600)); // km/h
+    console.log('Detected average speed:', avgSpeed, 'km/h');
+    
     if (avgSpeed < 5) return 'walk';
-    if (avgSpeed < 15) return 'bike';
+    if (avgSpeed < 20) return 'bike';
     if (avgSpeed < 50) return 'bus';
     return 'car';
   };
@@ -411,6 +485,31 @@ export default function TripTracker({ onTripComplete }) {
       'auto-detect': 0.15,
     };
     return distance * (factors[mode] || 0.21);
+  };
+
+  const saveTripToDatabase = async (trip) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('emissions').insert({
+        user_id: user.id,
+        category: 'transport',
+        subcategory: trip.mode,
+        amount: trip.emissions,
+        description: `${trip.mode} trip: ${trip.distance.toFixed(2)}km`,
+        source: 'gps',
+        metadata: {
+          distance_km: trip.distance,
+          duration_seconds: trip.duration,
+          route_points: trip.route.length,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error saving trip:', error);
+    }
   };
 
   const resetTrip = () => {
@@ -443,7 +542,7 @@ export default function TripTracker({ onTripComplete }) {
     return [];
   };
 
-  if (!currentLocation) {
+  if (isLoadingLocation) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
         <ActivityIndicator size="large" color={theme.accentText} />
@@ -451,10 +550,27 @@ export default function TripTracker({ onTripComplete }) {
           Getting your location...
         </Text>
         <TouchableOpacity 
-          style={styles.retryButton}
+          style={[styles.retryButton, { backgroundColor: theme.buttonBackground }]}
           onPress={initializeLocation}
         >
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={[styles.retryText, { color: theme.buttonText }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!currentLocation) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Ionicons name="location-outline" size={64} color={theme.secondaryText} />
+        <Text style={[styles.loadingText, { color: theme.primaryText }]}>
+          Location unavailable
+        </Text>
+        <TouchableOpacity 
+          style={[styles.retryButton, { backgroundColor: theme.buttonBackground }]}
+          onPress={initializeLocation}
+        >
+          <Text style={[styles.retryText, { color: theme.buttonText }]}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
@@ -466,217 +582,124 @@ export default function TripTracker({ onTripComplete }) {
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
-        style={StyleSheet.absoluteFillObject}
+        style={styles.map}
         initialRegion={currentLocation}
-        showsUserLocation={true}
-        showsMyLocationButton={panelState !== 'expanded'}
-        showsCompass={true}
         customMapStyle={getMapStyle()}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        followsUserLocation={isTracking}
+        showsCompass={true}
+        showsScale={true}
         onMapReady={() => {
-          console.log('Map ready');
+          console.log('✅ Map is ready');
           setIsMapReady(true);
-          if (currentLocation && mapRef.current) {
-            setTimeout(() => {
-              mapRef.current.animateToRegion(currentLocation, 1000);
-            }, 500);
-          }
         }}
       >
+        {/* Current location marker */}
+        {currentLocation && (
+          <Marker
+            coordinate={{
+              latitude: currentLocation.latitude,
+              longitude: currentLocation.longitude,
+            }}
+            title="Current Location"
+          >
+            <View style={styles.currentLocationMarker}>
+              <View style={styles.currentLocationDot} />
+            </View>
+          </Marker>
+        )}
+
+        {/* Route polyline */}
         {routeCoordinates.length > 1 && (
           <Polyline
             coordinates={routeCoordinates}
-            strokeColor="#10B981"
+            strokeColor={theme.accentText}
             strokeWidth={4}
-          />
-        )}
-        
-        {routeCoordinates.length > 0 && (
-          <Marker
-            coordinate={routeCoordinates[0]}
-            title="Start"
-            pinColor="#10B981"
+            lineCap="round"
+            lineJoin="round"
           />
         )}
       </MapView>
 
-      {/* Bottom Panel with Gesture Support */}
-      <Animated.View 
+      {/* Control Panel */}
+      <Animated.View
         style={[
-          styles.bottomPanel,
-          { 
-            backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+          styles.panel,
+          {
             height: panelAnimation,
-          }
+            backgroundColor: isDarkMode ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+          },
         ]}
         {...panResponder.panHandlers}
       >
         {/* Drag Handle */}
         <View style={styles.dragHandle}>
-          <View style={styles.dragIndicator} />
+          <View style={[styles.dragBar, { backgroundColor: theme.secondaryText }]} />
         </View>
 
-        {/* Panel Content */}
+        {/* Content */}
         <View style={styles.panelContent}>
-          {panelState === 'minimized' ? (
-            // Minimized View
-            <View style={styles.minimizedContent}>
-              {isTracking ? (
-                <View style={styles.minimizedStats}>
-                  <View style={styles.minimizedStatsLeft}>
-                    <Text style={[styles.minimizedText, { color: theme.primaryText }]}>
-                      {totalDistance.toFixed(1)} km
-                    </Text>
-                    <Text style={[styles.minimizedText, { color: theme.secondaryText }]}>
-                      {formatTime(elapsedTime)}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={handleStopTracking}>
-                    <Ionicons name="stop-circle" size={40} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.minimizedStart}
-                  onPress={() => animatePanel(COLLAPSED_HEIGHT, 'collapsed')}
-                >
-                  <Ionicons name="play-circle" size={40} color={theme.accentText} />
-                  <Text style={[styles.minimizedText, { color: theme.primaryText, marginLeft: 10 }]}>
-                    Start Journey
-                  </Text>
-                </TouchableOpacity>
-              )}
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                {totalDistance.toFixed(2)} km
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Distance</Text>
             </View>
-          ) : (
-            // Expanded/Collapsed View
-            <>
-              {isTracking ? (
-                <View style={styles.trackingInfo}>
-                  <Text style={[styles.trackingTitle, { color: theme.primaryText }]}>
-                    Tracking: {selectedMode}
-                  </Text>
-                  
-                  <View style={styles.statsRow}>
-                    <View style={styles.statItem}>
-                      <Ionicons name="time-outline" size={20} color={theme.secondaryText} />
-                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                        {formatTime(elapsedTime)}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.statItem}>
-                      <Ionicons name="navigate-outline" size={20} color={theme.secondaryText} />
-                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                        {totalDistance.toFixed(2)} km
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.statItem}>
-                      <Ionicons name="speedometer-outline" size={20} color={theme.secondaryText} />
-                      <Text style={[styles.statValue, { color: theme.primaryText }]}>
-                        {currentSpeed.toFixed(1)} km/h
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  <TouchableOpacity
-                    style={[styles.stopButton, { backgroundColor: '#EF4444' }]}
-                    onPress={handleStopTracking}
-                  >
-                    <Ionicons name="stop" size={24} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Stop Tracking</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.startPanel}>
-                  <Text style={[styles.startTitle, { color: theme.primaryText }]}>
-                    Start Your Journey
-                  </Text>
-                  
-                  <TouchableOpacity
-                    style={[styles.modeSelector, { 
-                      backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider 
-                    }]}
-                    onPress={() => setShowModeSelector(true)}
-                  >
-                    <Ionicons 
-                      name={transportModes.find(m => m.id === selectedMode)?.icon} 
-                      size={24} 
-                      color={transportModes.find(m => m.id === selectedMode)?.color} 
-                    />
-                    <Text style={[styles.modeSelectorText, { color: theme.primaryText }]}>
-                      {transportModes.find(m => m.id === selectedMode)?.name}
-                    </Text>
-                    <Ionicons name="chevron-down" size={20} color={theme.secondaryText} />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.startButton, { backgroundColor: theme.accentText }]}
-                    onPress={handleStartTracking}
-                  >
-                    <Ionicons name="play" size={24} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Start Tracking</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
+            <View style={styles.stat}>
+              <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                {formatTime(elapsedTime)}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Time</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                {currentSpeed.toFixed(1)} km/h
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>Speed</Text>
+            </View>
+          </View>
+
+          {/* Start/Stop Button */}
+          <TouchableOpacity
+            style={[
+              styles.trackButton,
+              {
+                backgroundColor: isTracking ? '#EF4444' : theme.buttonBackground,
+              },
+            ]}
+            onPress={isTracking ? stopTracking : startTracking}
+          >
+            <Ionicons
+              name={isTracking ? 'stop-circle' : 'play-circle'}
+              size={24}
+              color="#FFFFFF"
+            />
+            <Text style={styles.trackButtonText}>
+              {isTracking ? 'Stop Tracking' : 'Start Tracking'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
 
-      {/* Transport Mode Modal */}
-      <Modal
-        visible={showModeSelector}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowModeSelector(false)}
+      {/* Recenter Button */}
+      <TouchableOpacity
+        style={[styles.recenterButton, { backgroundColor: theme.cardBackground }]}
+        onPress={() => {
+          if (currentLocation && mapRef.current) {
+            mapRef.current.animateToRegion({
+              latitude: currentLocation.latitude,
+              longitude: currentLocation.longitude,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 500);
+          }
+        }}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          onPress={() => setShowModeSelector(false)}
-          activeOpacity={1}
-        >
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.primaryText }]}>
-                Select Transport Mode
-              </Text>
-              <TouchableOpacity onPress={() => setShowModeSelector(false)}>
-                <Ionicons name="close" size={24} color={theme.primaryText} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modeList}>
-              {transportModes.map(mode => (
-                <TouchableOpacity
-                  key={mode.id}
-                  style={[
-                    styles.modeItem,
-                    { 
-                      backgroundColor: selectedMode === mode.id 
-                        ? theme.accentText + '20' 
-                        : 'transparent' 
-                    }
-                  ]}
-                  onPress={() => {
-                    setSelectedMode(mode.id);
-                    setShowModeSelector(false);
-                  }}
-                >
-                  <Ionicons name={mode.icon} size={24} color={mode.color} />
-                  <Text style={[styles.modeItemText, { color: theme.primaryText }]}>
-                    {mode.name}
-                  </Text>
-                  {mode.id === 'auto-detect' && (
-                    <Text style={[styles.modeItemHint, { color: theme.secondaryText }]}>
-                      (Based on speed)
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <Ionicons name="navigate" size={24} color={theme.accentText} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -684,29 +707,47 @@ export default function TripTracker({ onTripComplete }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    height: height * 0.5,
+  },
+  map: {
+    width: '100%',
+    height: '100%',
   },
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
-    marginTop: 10,
     fontSize: 16,
+    marginTop: 16,
+    marginBottom: 20,
   },
   retryButton: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#10B981',
-    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
   retryText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
   },
-  bottomPanel: {
+  currentLocationMarker: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  currentLocationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  panel: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -715,150 +756,66 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 10,
-    overflow: 'hidden',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   dragHandle: {
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
-  dragIndicator: {
+  dragBar: {
     width: 40,
     height: 4,
-    backgroundColor: 'rgba(156, 163, 175, 0.5)',
     borderRadius: 2,
+    opacity: 0.3,
   },
   panelContent: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  minimizedContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  minimizedStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  minimizedStatsLeft: {
-    flexDirection: 'column',
-  },
-  minimizedStart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  minimizedText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  trackingInfo: {
-    alignItems: 'center',
-  },
-  trackingTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 15,
+    padding: 16,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    width: '100%',
     marginBottom: 20,
   },
-  statItem: {
+  stat: {
     alignItems: 'center',
-    flex: 1,
   },
   statValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 5,
-  },
-  stopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
-  },
-  startPanel: {
-    alignItems: 'center',
-  },
-  startTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 15,
+    marginBottom: 4,
   },
-  modeSelector: {
+  statLabel: {
+    fontSize: 12,
+  },
+  trackButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    padding: 16,
     borderRadius: 12,
-    marginBottom: 15,
-    width: '100%',
+    gap: 8,
   },
-  modeSelectorText: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 16,
-  },
-  startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
-  },
-  buttonText: {
+  trackButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '60%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
   },
-  modeList: {
-    marginBottom: 20,
-  },
-  modeItem: {
-    flexDirection: 'row',
+  recenterButton: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  modeItemText: {
-    fontSize: 16,
-    marginLeft: 15,
-    flex: 1,
-  },
-  modeItemHint: {
-    fontSize: 12,
-    fontStyle: 'italic',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });

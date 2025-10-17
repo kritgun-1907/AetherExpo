@@ -1,12 +1,9 @@
-// TrackingScreen.js - Fixed with proper React imports
+// TrackingScreen.js - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
-import ActivityTracker from './src/components/carbon/ActivityTracker';
-import { calculateRealEmissions } from './src/api/climatiq';
 import CarbonCalculator from './src/components/carbon/CarbonCalculator';
 import TripTracker from './src/components/carbon/TripTracker';
 import EmissionService from './src/services/EmissionService';
 import SmartActivityInput from './src/components/carbon/SmartActivityInput';
-import AutopilotEmissionService from './src/services/AutopilotEmissionService';
 import ActivityIdFinder from './src/components/ActivityIDFinder';
 import EmissionSyncService from './src/services/EmissionSyncService';
 import {
@@ -21,11 +18,11 @@ import {
   ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase, addEmission } from './src/api/supabase';
+import { supabase } from './src/api/supabase';
 import { useTheme } from './src/context/ThemeContext';
 import * as Location from 'expo-location';
 
-// Import store conditionally to avoid errors
+// Import store conditionally
 let useCarbonStore;
 try {
   const carbonStoreModule = require('./src/store/carbonStore');
@@ -39,20 +36,17 @@ try {
 }
 
 const BACKGROUND_IMAGE = require('./assets/hero-carbon-tracker.jpg');
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAXwZK2l4RP6fTuGvKglvWFfJwu30KtlyE';
 
 export default function TrackingScreen() {
   const { theme, isDarkMode } = useTheme();
   const { addEmission: storeAddEmission } = useCarbonStore();
   
   const [showFinder, setShowFinder] = useState(false);
-
-  // State hooks for category selection
   const [selectedCategory, setSelectedCategory] = useState('transport');
   const [activeView, setActiveView] = useState('quick');
   
   // Transportation state
- const [transportMode, setTransportMode] = useState('car_petrol');
+  const [transportMode, setTransportMode] = useState('car_petrol');
   const [distance, setDistance] = useState('');
   
   // Food state
@@ -67,32 +61,60 @@ export default function TrackingScreen() {
   const [itemType, setItemType] = useState('clothing');
   const [itemCount, setItemCount] = useState('1');
 
-  // Setup test - NOW INSIDE THE COMPONENT
+  // Setup test
   useEffect(() => {
     const testSetup = async () => {
       console.log('=== SETUP TEST ===');
-      console.log('Google Maps Key exists:', !!GOOGLE_MAPS_API_KEY);
-      
       const { status } = await Location.getForegroundPermissionsAsync();
       console.log('Location permission:', status);
       
       const { data: { user } } = await supabase.auth.getUser();
       console.log('User authenticated:', !!user);
-
-      console.log('=== TESTING CLIMATIQ API ===');
-      const apiResult = await EmissionService.testApiConnection();
-      console.log('API test result:', apiResult);
-
     };
     
     testSetup();
   }, []);
 
+  // 🔥 FIX: Early return for location view (full screen)
+  if (activeView === 'location') {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        
+        {/* Floating back button */}
+        <TouchableOpacity
+          style={{
+            position: 'absolute',
+            top: 50,
+            left: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 25,
+            zIndex: 1000,
+            gap: 8,
+          }}
+          onPress={() => setActiveView('quick')}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+            Back
+          </Text>
+        </TouchableOpacity>
+        
+        {/* Full screen TripTracker */}
+        <TripTracker onTripComplete={handleTripComplete} />
+      </View>
+    );
+  }
+
+  // ActivityIdFinder full screen view
   if (showFinder) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
-        {/* Back button */}
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => setShowFinder(false)}
@@ -106,6 +128,7 @@ export default function TrackingScreen() {
     );
   }
 
+  // Handlers
   const handleActivityAdded = (activityData) => {
     console.log('Activity added:', activityData);
     if (storeAddEmission) {
@@ -127,169 +150,143 @@ export default function TrackingScreen() {
     }
   };
 
-// REPLACE the calculateEmissions function in TrackingScreen.js with this:
+  const clearForm = () => {
+    setDistance('');
+    setMealCount('1');
+    setEnergyHours('');
+    setItemCount('1');
+  };
 
-const calculateEmissions = async () => {
-  let itemLabel = '';
-  let activityId = '';
-  
-  switch(selectedCategory) {
-    case 'transport':
-      if (!distance || parseFloat(distance) <= 0) {
-        Alert.alert('Error', 'Please enter a valid distance');
-        return;
-      }
-      activityId = transportMode;
-      itemLabel = `${transportMode.replace('_', ' ')} - ${distance} km`;
-      break;
-      
-    case 'food':
-      if (!mealCount || parseFloat(mealCount) <= 0) {
-        Alert.alert('Error', 'Please enter number of meals');
-        return;
-      }
-      activityId = mealType;
-      itemLabel = `${mealType} meal(s) - ${mealCount}`;
-      break;
-      
-    case 'home':
-      if (!energyHours || parseFloat(energyHours) <= 0) {
-        Alert.alert('Error', 'Please enter usage amount');
-        return;
-      }
-      activityId = energyType;
-      itemLabel = `${energyType} - ${energyHours} units`;
-      break;
-      
-    case 'shopping':
-      if (!itemCount || parseFloat(itemCount) <= 0) {
-        Alert.alert('Error', 'Please enter item quantity');
-        return;
-      }
-      activityId = itemType;
-      itemLabel = `${itemType} - ${itemCount} item(s)`;
-      break;
-  }
-  
-  try {
-    // Get the appropriate amount and unit
-    let amount, unit;
+  const calculateEmissions = async () => {
+    let itemLabel = '';
+    let activityId = '';
     
     switch(selectedCategory) {
       case 'transport':
-        amount = parseFloat(distance);
-        unit = 'km';
+        if (!distance || parseFloat(distance) <= 0) {
+          Alert.alert('Error', 'Please enter a valid distance');
+          return;
+        }
+        activityId = transportMode;
+        itemLabel = `${transportMode.replace('_', ' ')} - ${distance} km`;
         break;
+        
       case 'food':
-        amount = parseFloat(mealCount) * 0.3;
-        unit = 'kg';
+        if (!mealCount || parseFloat(mealCount) <= 0) {
+          Alert.alert('Error', 'Please enter number of meals');
+          return;
+        }
+        activityId = mealType;
+        itemLabel = `${mealType} meal(s) - ${mealCount}`;
         break;
+        
       case 'home':
-        amount = parseFloat(energyHours);
-        unit = energyType === 'electricity' ? 'kWh' : 
-               energyType === 'gas' ? 'm³' : 'L';
+        if (!energyHours || parseFloat(energyHours) <= 0) {
+          Alert.alert('Error', 'Please enter usage amount');
+          return;
+        }
+        activityId = energyType;
+        itemLabel = `${energyType} - ${energyHours} units`;
         break;
+        
       case 'shopping':
-        amount = parseFloat(itemCount);
-        unit = 'item';
+        if (!itemCount || parseFloat(itemCount) <= 0) {
+          Alert.alert('Error', 'Please enter item quantity');
+          return;
+        }
+        activityId = itemType;
+        itemLabel = `${itemType} - ${itemCount} item(s)`;
         break;
-      default:
-        throw new Error('Invalid category');
     }
     
-    // 🔥 FIX: Pass original input values to EmissionSyncService
-    // Let it handle the calculation internally
-    const syncResult = await EmissionSyncService.addEmission(
-      selectedCategory,
-      activityId,
-      amount,           // ✅ Original amount (e.g., 2 km)
-      { 
-        unit: unit,     // ✅ Original unit (e.g., 'km')
-        region: 'US',
-        description: itemLabel
+    try {
+      let amount, unit;
+      
+      switch(selectedCategory) {
+        case 'transport':
+          amount = parseFloat(distance);
+          unit = 'km';
+          break;
+        case 'food':
+          amount = parseFloat(mealCount) * 0.3;
+          unit = 'kg';
+          break;
+        case 'home':
+          amount = parseFloat(energyHours);
+          unit = energyType === 'electricity' ? 'kWh' : 
+                 energyType === 'gas' ? 'm³' : 'L';
+          break;
+        case 'shopping':
+          amount = parseFloat(itemCount);
+          unit = 'item';
+          break;
+        default:
+          throw new Error('Invalid category');
       }
-    );
-    
-    if (syncResult.success) {
-      Alert.alert(
-        '✅ Activity Tracked!',
-        `${itemLabel}\n\n` +
-        `🌍 Emissions: ${syncResult.calculation.emissions.toFixed(2)} ${syncResult.calculation.unit}\n` +
-        `📊 Source: ${syncResult.calculation.source}\n` +
-        `🎯 Confidence: ${syncResult.calculation.confidence}`,
-        [{ text: 'OK', onPress: clearForm }]
+      
+      const syncResult = await EmissionSyncService.addEmission(
+        selectedCategory,
+        activityId,
+        amount,
+        { 
+          unit: unit,
+          region: 'US',
+          description: itemLabel
+        }
       );
       
-      // Notify parent component
-      if (storeAddEmission) {
-        storeAddEmission(syncResult.calculation.emissions, selectedCategory);
+      if (syncResult.success) {
+        Alert.alert(
+          '✅ Activity Tracked!',
+          `${itemLabel}\n\n` +
+          `🌍 Emissions: ${syncResult.calculation.emissions.toFixed(2)} ${syncResult.calculation.unit}\n` +
+          `📊 Source: ${syncResult.calculation.source}\n` +
+          `🎯 Confidence: ${syncResult.calculation.confidence}`,
+          [{ text: 'OK', onPress: clearForm }]
+        );
+        
+        if (storeAddEmission) {
+          storeAddEmission(syncResult.calculation.emissions, selectedCategory);
+        }
+      } else {
+        throw new Error(syncResult.error);
       }
-    } else {
-      throw new Error(syncResult.error);
+    } catch (error) {
+      console.error('❌ Emission calculation error:', error);
+      Alert.alert('Error', 'Failed to calculate emissions: ' + error.message);
     }
-  } catch (error) {
-    console.error('❌ Emission calculation error:', error);
-    Alert.alert('Error', 'Failed to calculate emissions: ' + error.message);
-  }
-};
-
-// Add this at the beginning of handleSubmit:
-console.log('DEBUG: Form values:', {
-  selectedCategory,
-  distance,
-  mealCount,
-  energyHours,
-  itemCount,
-  transportMode,
-  mealType,
-  energyType,
-  itemType
-});
-
-// NEW FUNCTION ADDED:
-const clearForm = () => {
-  setDistance('');
-  setMealCount('1');
-  setEnergyHours('');
-  setItemCount('1');
-};
+  };
 
   const handleSubmit = async () => {
-  // First validate input
-  let hasValidInput = false;
-  
-  switch(selectedCategory) {
-    case 'transport':
-      hasValidInput = distance && parseFloat(distance) > 0;
-      break;
-    case 'food':
-      hasValidInput = mealCount && parseFloat(mealCount) > 0;
-      break;
-    case 'home':
-      hasValidInput = energyHours && parseFloat(energyHours) > 0;
-      break;
-    case 'shopping':
-      hasValidInput = itemCount && parseFloat(itemCount) > 0;
-      break;
-  }
-  
-  if (!hasValidInput) {
-    Alert.alert('Error', 'Please enter valid values');
-    return;
-  }
+    let hasValidInput = false;
+    
+    switch(selectedCategory) {
+      case 'transport':
+        hasValidInput = distance && parseFloat(distance) > 0;
+        break;
+      case 'food':
+        hasValidInput = mealCount && parseFloat(mealCount) > 0;
+        break;
+      case 'home':
+        hasValidInput = energyHours && parseFloat(energyHours) > 0;
+        break;
+      case 'shopping':
+        hasValidInput = itemCount && parseFloat(itemCount) > 0;
+        break;
+    }
+    
+    if (!hasValidInput) {
+      Alert.alert('Error', 'Please enter valid values');
+      return;
+    }
 
-  try {
-    // Call calculateEmissions and wait for it since it's async
-    await calculateEmissions();
-    // calculateEmissions already handles everything including alerts and clearing form
-  } catch (error) {
-    console.error('Error submitting emission:', error);
-    Alert.alert('Error', 'Failed to track emission. Please try again.');
-    console.log('DEBUG: Calculated emissions:', { emissions, description });
-  }
-  
-};
-
+    try {
+      await calculateEmissions();
+    } catch (error) {
+      console.error('Error submitting emission:', error);
+      Alert.alert('Error', 'Failed to track emission. Please try again.');
+    }
+  };
 
   const inferCategory = (description) => {
     const lower = description.toLowerCase();
@@ -307,6 +304,7 @@ const clearForm = () => {
 
   const dynamicStyles = createDynamicStyles(theme, isDarkMode);
 
+  // Main render (Quick Track, Smart, Calculator views)
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} />
@@ -325,9 +323,10 @@ const clearForm = () => {
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.primaryText }]}>Track Activity</Text>
-          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>Log your daily carbon emissions</Text>
+          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
+            Log your daily carbon emissions
+          </Text>
 
-            {/* ADD THIS BUTTON */}
           <TouchableOpacity 
             style={styles.finderButton}
             onPress={() => setShowFinder(true)}
@@ -335,7 +334,6 @@ const clearForm = () => {
             <Ionicons name="search-outline" size={20} color="#10B981" />
             <Text style={styles.finderButtonText}>🔍 Find Activity IDs</Text>
           </TouchableOpacity>
-          
         </View>
 
         {/* View Selector */}
@@ -364,27 +362,27 @@ const clearForm = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-  style={[
-    styles.viewButton,
-    {
-      backgroundColor: activeView === 'smart' ? theme.accentText : 'transparent',
-      borderColor: theme.accentText,
-    }
-  ]}
-  onPress={() => setActiveView('smart')}
->
-  <Ionicons 
-    name="sparkles-outline" 
-    size={20} 
-    color={activeView === 'smart' ? '#FFFFFF' : theme.accentText} 
-  />
-  <Text style={[
-    styles.viewButtonText,
-    { color: activeView === 'smart' ? '#FFFFFF' : theme.accentText }
-  ]}>
-    AI Smart
-  </Text>
-</TouchableOpacity>
+            style={[
+              styles.viewButton,
+              {
+                backgroundColor: activeView === 'smart' ? theme.accentText : 'transparent',
+                borderColor: theme.accentText,
+              }
+            ]}
+            onPress={() => setActiveView('smart')}
+          >
+            <Ionicons 
+              name="sparkles-outline" 
+              size={20} 
+              color={activeView === 'smart' ? '#FFFFFF' : theme.accentText} 
+            />
+            <Text style={[
+              styles.viewButtonText,
+              { color: activeView === 'smart' ? '#FFFFFF' : theme.accentText }
+            ]}>
+              AI Smart
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[
@@ -468,38 +466,44 @@ const clearForm = () => {
             {/* TRANSPORTATION FORM */}
             {selectedCategory === 'transport' && (
               <View style={[dynamicStyles.form]}>
-                <Text style={[styles.formTitle, { color: theme.primaryText }]}>Transportation Details</Text>
+                <Text style={[styles.formTitle, { color: theme.primaryText }]}>
+                  Transportation Details
+                </Text>
                 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Mode of Transport</Text>
-               <View style={styles.optionContainer}>
-              {[
-                  { key: 'car_petrol', label: 'Car (Petrol)', emoji: '🚗' },
-                  { key: 'car_diesel', label: 'Car (Diesel)', emoji: '🚙' },
-                  { key: 'car_electric', label: 'Electric Car', emoji: '⚡' },
-                  { key: 'bus', label: 'Bus', emoji: '🚌' },
-                  { key: 'train', label: 'Train', emoji: '🚆' },
-                  { key: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' }
-                ].map((mode) => (
-                  <TouchableOpacity
-                    key={mode.key}
-                    style={[
-                      dynamicStyles.option,
-                      transportMode === mode.key && dynamicStyles.optionActive
-                    ]}
-                    onPress={() => setTransportMode(mode.key)}
-                  >
-                    <Text style={styles.optionEmoji}>{mode.emoji}</Text>
-                    <Text style={[
-                      styles.optionText,
-                      { color: transportMode === mode.key ? theme.buttonText : theme.secondaryText }
-                    ]}>
-                      {mode.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Mode of Transport
+                </Text>
+                <View style={styles.optionContainer}>
+                  {[
+                    { key: 'car_petrol', label: 'Car (Petrol)', emoji: '🚗' },
+                    { key: 'car_diesel', label: 'Car (Diesel)', emoji: '🚙' },
+                    { key: 'car_electric', label: 'Electric Car', emoji: '⚡' },
+                    { key: 'bus', label: 'Bus', emoji: '🚌' },
+                    { key: 'train', label: 'Train', emoji: '🚆' },
+                    { key: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' }
+                  ].map((mode) => (
+                    <TouchableOpacity
+                      key={mode.key}
+                      style={[
+                        dynamicStyles.option,
+                        transportMode === mode.key && dynamicStyles.optionActive
+                      ]}
+                      onPress={() => setTransportMode(mode.key)}
+                    >
+                      <Text style={styles.optionEmoji}>{mode.emoji}</Text>
+                      <Text style={[
+                        styles.optionText,
+                        { color: transportMode === mode.key ? theme.buttonText : theme.secondaryText }
+                      ]}>
+                        {mode.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Distance (km)</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Distance (km)
+                </Text>
                 <TextInput
                   style={[dynamicStyles.input, { color: theme.primaryText }]}
                   placeholder="Enter distance"
@@ -514,9 +518,13 @@ const clearForm = () => {
             {/* FOOD FORM */}
             {selectedCategory === 'food' && (
               <View style={[dynamicStyles.form]}>
-                <Text style={[styles.formTitle, { color: theme.primaryText }]}>Food Details</Text>
+                <Text style={[styles.formTitle, { color: theme.primaryText }]}>
+                  Food Details
+                </Text>
                 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Meal Type</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Meal Type
+                </Text>
                 <View style={styles.optionContainer}>
                   {[
                     { key: 'meat', label: 'Meat', emoji: '🥩' },
@@ -542,10 +550,12 @@ const clearForm = () => {
                   ))}
                 </View>
 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Number of Meals</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Number of Meals
+                </Text>
                 <TextInput
                   style={[dynamicStyles.input, { color: theme.primaryText }]}
-                  placeholder="Enter number of meals"
+                  placeholder="Enter meal count"
                   placeholderTextColor={theme.secondaryText}
                   value={mealCount}
                   onChangeText={setMealCount}
@@ -557,14 +567,18 @@ const clearForm = () => {
             {/* HOME/ENERGY FORM */}
             {selectedCategory === 'home' && (
               <View style={[dynamicStyles.form]}>
-                <Text style={[styles.formTitle, { color: theme.primaryText }]}>Home Energy Details</Text>
+                <Text style={[styles.formTitle, { color: theme.primaryText }]}>
+                  Energy Details
+                </Text>
                 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Energy Type</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Energy Type
+                </Text>
                 <View style={styles.optionContainer}>
                   {[
                     { key: 'electricity', label: 'Electricity', emoji: '⚡' },
                     { key: 'gas', label: 'Natural Gas', emoji: '🔥' },
-                    { key: 'oil', label: 'Heating Oil', emoji: '🛢️' }
+                    { key: 'water', label: 'Water', emoji: '💧' }
                   ].map((energy) => (
                     <TouchableOpacity
                       key={energy.key}
@@ -585,10 +599,12 @@ const clearForm = () => {
                   ))}
                 </View>
 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Usage Hours</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Usage Amount
+                </Text>
                 <TextInput
                   style={[dynamicStyles.input, { color: theme.primaryText }]}
-                  placeholder="Enter usage hours"
+                  placeholder="Enter usage hours/units"
                   placeholderTextColor={theme.secondaryText}
                   value={energyHours}
                   onChangeText={setEnergyHours}
@@ -600,15 +616,18 @@ const clearForm = () => {
             {/* SHOPPING FORM */}
             {selectedCategory === 'shopping' && (
               <View style={[dynamicStyles.form]}>
-                <Text style={[styles.formTitle, { color: theme.primaryText }]}>Shopping Details</Text>
+                <Text style={[styles.formTitle, { color: theme.primaryText }]}>
+                  Shopping Details
+                </Text>
                 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Item Type</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Item Type
+                </Text>
                 <View style={styles.optionContainer}>
                   {[
                     { key: 'clothing', label: 'Clothing', emoji: '👕' },
                     { key: 'electronics', label: 'Electronics', emoji: '📱' },
-                    { key: 'furniture', label: 'Furniture', emoji: '🪑' },
-                    { key: 'groceries', label: 'Groceries', emoji: '🛒' }
+                    { key: 'furniture', label: 'Furniture', emoji: '🛋️' }
                   ].map((item) => (
                     <TouchableOpacity
                       key={item.key}
@@ -629,7 +648,9 @@ const clearForm = () => {
                   ))}
                 </View>
 
-                <Text style={[styles.label, { color: theme.secondaryText }]}>Item Quantity</Text>
+                <Text style={[styles.label, { color: theme.secondaryText }]}>
+                  Item Quantity
+                </Text>
                 <TextInput
                   style={[dynamicStyles.input, { color: theme.primaryText }]}
                   placeholder="Enter item quantity"
@@ -642,8 +663,13 @@ const clearForm = () => {
             )}
 
             {/* Submit Button */}
-            <TouchableOpacity style={[dynamicStyles.submitButton]} onPress={handleSubmit}>
-              <Text style={[styles.submitButtonText, { color: theme.buttonText }]}>Track Activity</Text>
+            <TouchableOpacity 
+              style={[dynamicStyles.submitButton]} 
+              onPress={handleSubmit}
+            >
+              <Text style={[styles.submitButtonText, { color: theme.buttonText }]}>
+                Track Activity
+              </Text>
             </TouchableOpacity>
           </>
         )}
@@ -653,32 +679,25 @@ const clearForm = () => {
           <CarbonCalculator onCalculationComplete={handleCalculationComplete} />
         )}
 
-        {/* Location-Based Trip Tracker View */}
-        {activeView === 'location' && (
-          <View style={[dynamicStyles.form]}>
-            <Text style={[styles.formTitle, { color: theme.primaryText }]}>
-              Location-Based Tracking
-            </Text>
-            <TripTracker onTripComplete={handleTripComplete} />
-          </View>
-        )}
         {/* Smart Activity Input View */}
         {activeView === 'smart' && (
-  <View style={[dynamicStyles.form]}>
-    <SmartActivityInput 
-      onActivityAdded={(data) => {
-        console.log('Smart activity added:', data);
-        if (storeAddEmission) {
-          storeAddEmission(data.emissions, inferCategory(data.description));
-        }
-      }}
-    />
-  </View>
-)}
+          <View style={[dynamicStyles.form]}>
+            <SmartActivityInput 
+              onActivityAdded={(data) => {
+                console.log('Smart activity added:', data);
+                if (storeAddEmission) {
+                  storeAddEmission(data.emissions, inferCategory(data.description));
+                }
+              }}
+            />
+          </View>
+        )}
 
         {/* Info Card */}
         <View style={[dynamicStyles.infoCard]}>
-          <Text style={[styles.infoTitle, { color: isDarkMode ? '#F59E0B' : '#92400E' }]}>💡 Did you know?</Text>
+          <Text style={[styles.infoTitle, { color: isDarkMode ? '#F59E0B' : '#92400E' }]}>
+            💡 Did you know?
+          </Text>
           <Text style={[styles.infoText, { color: isDarkMode ? '#FCD34D' : '#78350F' }]}>
             The average person produces about 4 tons of CO₂ per year. 
             Small changes in daily habits can significantly reduce your carbon footprint!
@@ -689,7 +708,7 @@ const clearForm = () => {
   );
 }
 
-// Create dynamic styles function
+// Dynamic styles function
 const createDynamicStyles = (theme, isDarkMode) => ({
   categoryButton: {
     flex: 1,
@@ -707,28 +726,26 @@ const createDynamicStyles = (theme, isDarkMode) => ({
   },
   form: {
     backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.cardBackground,
-    marginHorizontal: 15,
     borderRadius: 15,
     padding: 20,
-    marginBottom: 20,
-    borderWidth: isDarkMode ? 1 : 0,
-    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
   },
   option: {
-    flexDirection: 'row',
+    flex: 1,
+    minWidth: '30%',
+    backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.3)' : theme.divider,
+    borderRadius: 10,
+    padding: 12,
+    margin: 5,
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    backgroundColor: isDarkMode ? 'rgba(55, 65, 81, 0.5)' : theme.divider,
-    borderRadius: 20,
-    marginRight: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    minWidth: 80,
+    borderWidth: 2,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.1)' : theme.border,
   },
   optionActive: {
-    backgroundColor: theme.buttonBackground,
+    backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5',
     borderColor: theme.accentText,
   },
   input: {
@@ -736,30 +753,35 @@ const createDynamicStyles = (theme, isDarkMode) => ({
     borderRadius: 10,
     padding: 15,
     fontSize: 16,
-    borderWidth: isDarkMode ? 1 : 0,
-    borderColor: isDarkMode ? theme.border : 'transparent',
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : theme.border,
   },
   submitButton: {
     backgroundColor: theme.buttonBackground,
-    marginHorizontal: 15,
-    borderRadius: 12,
+    borderRadius: 15,
     padding: 18,
+    marginHorizontal: 15,
+    marginTop: 20,
     alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: isDarkMode ? 1 : 0,
-    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
+    shadowColor: isDarkMode ? 'transparent' : theme.accentText,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: isDarkMode ? 0 : 0.3,
+    shadowRadius: 8,
+    elevation: isDarkMode ? 0 : 8,
   },
   infoCard: {
-    backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
+    backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7',
+    borderRadius: 15,
+    padding: 20,
     marginHorizontal: 15,
-    borderRadius: 12,
-    padding: 15,
+    marginTop: 20,
     marginBottom: 30,
-    borderWidth: isDarkMode ? 1 : 0,
-    borderColor: isDarkMode ? 'rgba(245, 158, 11, 0.3)' : 'transparent',
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(245, 158, 11, 0.3)' : '#FCD34D',
   },
 });
 
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -768,83 +790,122 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 60,
     paddingBottom: 100,
   },
   header: {
-    padding: 20,
-    paddingTop: 0,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
+    marginBottom: 5,
   },
   subtitle: {
     fontSize: 16,
-    marginTop: 5,
+  },
+  finderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 25,
+    marginTop: 15,
+    alignSelf: 'flex-start',
+    gap: 8,
+  },
+  finderButtonText: {
+    color: '#10B981',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 25,
+    zIndex: 1000,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   viewSelector: {
     flexDirection: 'row',
     paddingHorizontal: 15,
-    marginBottom: 20,
+    marginBottom: 15,
+    gap: 8,
   },
   viewButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    marginHorizontal: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 2,
+    gap: 6,
   },
   viewButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    marginLeft: 5,
   },
   categoryContainer: {
     flexDirection: 'row',
     paddingHorizontal: 15,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   categoryIcon: {
-    fontSize: 24,
+    fontSize: 30,
     marginBottom: 5,
   },
   categoryText: {
     fontSize: 12,
+    fontWeight: '500',
   },
   formTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
   },
   label: {
     fontSize: 14,
-    marginBottom: 10,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginTop: 15,
+    marginBottom: 8,
   },
   optionContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   optionEmoji: {
-    fontSize: 16,
-    marginRight: 6,
+    fontSize: 24,
+    marginBottom: 4,
   },
   optionText: {
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   submitButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
   },
   infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
