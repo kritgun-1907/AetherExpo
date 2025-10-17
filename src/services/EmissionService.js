@@ -152,7 +152,7 @@ class EmissionService {
           unit: 'km'
         },
         motorcycle: {
-          activity_id: 'passenger_vehicle-vehicle_type_motorbike-fuel_source_petrol-distance_na-engine_size_medium',
+          activity_id: 'passenger_vehicle-vehicle_type_motorcycle-fuel_source_na-engine_size_na-vehicle_age_na-vehicle_weight_na',
           parameter_type: 'distance',
           unit: 'km'
         },
@@ -250,17 +250,17 @@ class EmissionService {
       },
       shopping: {
         clothing: {
-          activity_id: 'consumer_goods-type_clothing',
+          activity_id: 'consumer_goods-type_clothing_clothing_accessories_stores',
           parameter_type: 'money',
           unit: 'usd'
         },
         electronics: {
-          activity_id: 'consumer_goods-type_electronics',
+          activity_id: 'electronics-type_other_electronic_components',
           parameter_type: 'money',
           unit: 'usd'
         },
         furniture: {
-          activity_id: 'consumer_goods-type_furniture',
+          activity_id: 'waste-type_waste_and_scrap_of_wood_and_wood_by_products-disposal_method_na',
           parameter_type: 'money',
           unit: 'usd'
         }

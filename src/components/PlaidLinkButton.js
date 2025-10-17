@@ -1,96 +1,153 @@
-// src/components/PlaidLinkButton.js
+// src/components/PlaidLinkButton.js - WORKING EXPO SANDBOX VERSION
 import React, { useState } from 'react';
-import { TouchableOpacity, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { PlaidLink, LinkSuccess, LinkExit } from 'react-native-plaid-link-sdk';
+import { 
+  TouchableOpacity, 
+  Text, 
+  StyleSheet, 
+  Alert, 
+  ActivityIndicator, 
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { plaidService } from '../api/plaid';
 import { supabase } from '../api/supabase';
 import { useTheme } from '../context/ThemeContext';
 
-export default function PlaidLinkButton({ onSuccess, style }) {
+export default function PlaidLinkButton({ onSuccess, onError, style, buttonText, showIcon = true }) {
   const [loading, setLoading] = useState(false);
-  const [linkToken, setLinkToken] = useState(null);
   const { theme } = useTheme();
 
-  const createLinkToken = async () => {
+  const connectBank = async () => {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
       
-      if (!user) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
         Alert.alert('Error', 'Please log in to connect your bank account');
+        setLoading(false);
         return;
       }
 
-      const token = await plaidService.createLinkToken(user.id);
-      setLinkToken(token);
-      
-      // Open Plaid Link
-      PlaidLink.open({
-        tokenConfig: {
-          token: token,
-        },
-        onSuccess: handleOnSuccess,
-        onExit: handleOnExit,
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to connect to your bank. Please try again.');
-      console.error('Link token creation error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOnSuccess = async (success) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        Alert.alert('Error', 'Authentication error');
-        return;
-      }
-
-      // Exchange public token for access token
-      const result = await plaidService.exchangePublicToken(success.publicToken, user.id);
-      
-      // Get initial transactions and calculate carbon
-      const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
+      // In Sandbox mode, we'll simulate the Plaid connection
+      // This uses Plaid's /sandbox/public_token/create endpoint
       
       Alert.alert(
-        'Success!', 
-        `Bank connected successfully!\n\nLast 30 days:\n• ${carbonData.transactions.length} transactions\n• ${carbonData.totalCarbon.toFixed(2)} kg CO₂\n• $${carbonData.totalSpending.toFixed(2)} total spending`
+        'Connect Bank Account',
+        'This will connect a sandbox test bank account. In production, this would open Plaid Link for real bank connection.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => setLoading(false)
+          },
+          {
+            text: 'Connect Sandbox Bank',
+            onPress: () => createSandboxConnection(user)
+          }
+        ]
       );
-
-      if (onSuccess) {
-        onSuccess(result, carbonData);
-      }
+      
     } catch (error) {
-      Alert.alert('Error', 'Failed to process bank connection');
-      console.error('Success handler error:', error);
+      console.error('Error connecting bank:', error);
+      setLoading(false);
+      Alert.alert('Connection Error', error.message || 'Unable to connect. Please try again.');
+      
+      if (onError) {
+        onError(error);
+      }
     }
   };
 
-  const handleOnExit = (linkExit) => {
-    console.log('Plaid Link Exit:', linkExit);
-    if (linkExit.error) {
-      Alert.alert('Connection Cancelled', linkExit.error.displayMessage);
+  const createSandboxConnection = async (user) => {
+    try {
+      console.log('Creating sandbox bank connection...');
+      
+      // Use Plaid's sandbox public token creation
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-sandbox-item`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabase.supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create sandbox connection');
+      }
+
+      console.log('Sandbox connection created:', data);
+
+      // Now exchange the public token for an access token
+      const result = await plaidService.exchangePublicToken(data.public_token, user.id);
+      
+      console.log('Token exchange successful');
+      
+      // Try to fetch transactions
+      try {
+        const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
+        
+        Alert.alert(
+          'Success!', 
+          `Sandbox bank connected!\n\nLast 30 days:\n• ${carbonData.transactions.length} transactions\n• ${carbonData.totalCarbon.toFixed(2)} kg CO₂\n• $${carbonData.totalSpending.toFixed(2)} spending`,
+          [{ 
+            text: 'Great!', 
+            onPress: () => {
+              setLoading(false);
+              if (onSuccess) onSuccess(result, carbonData);
+            }
+          }]
+        );
+      } catch (transactionError) {
+        console.log('Transaction fetch error:', transactionError.message);
+        
+        Alert.alert(
+          'Bank Connected!', 
+          'Sandbox bank account connected. Transactions will sync shortly.',
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              setLoading(false);
+              if (onSuccess) onSuccess(result, null);
+            }
+          }]
+        );
+      }
+      
+    } catch (error) {
+      console.error('Error creating sandbox connection:', error);
+      setLoading(false);
+      Alert.alert('Error', error.message || 'Failed to connect sandbox bank');
+      if (onError) onError(error);
     }
   };
 
   return (
     <TouchableOpacity
-      style={[styles.button, { backgroundColor: theme.buttonBackground }, style]}
-      onPress={createLinkToken}
+      style={[styles.button, { backgroundColor: theme.accentText || '#10B981' }, style]}
+      onPress={connectBank}
       disabled={loading}
+      activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={theme.buttonText} size="small" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+          <Text style={styles.loadingText}>Connecting...</Text>
+        </View>
       ) : (
-        <>
-          <Text style={[styles.buttonIcon, { color: theme.buttonText }]}>🏦</Text>
-          <Text style={[styles.buttonText, { color: theme.buttonText }]}>
-            Connect Bank Account
+        <View style={styles.buttonContent}>
+          {showIcon && (
+            <Ionicons name="card-outline" size={24} color="#FFFFFF" style={styles.icon} />
+          )}
+          <Text style={styles.buttonText}>
+            {buttonText || 'Connect Bank (Sandbox)'}
           </Text>
-        </>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -101,17 +158,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
-    marginVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  buttonIcon: {
-    fontSize: 20,
-    marginRight: 10,
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: {
+    marginRight: 12,
   },
   buttonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 12,
   },
 });

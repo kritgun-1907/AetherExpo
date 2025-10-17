@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// LoginScreen.js - DEBUG VERSION
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,16 +23,29 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Add a listener to check when navigation would occur
+  useEffect(() => {
+    console.log('📍 LoginScreen mounted');
+    console.log('📍 Navigation object:', navigation ? 'exists' : 'missing');
+    
+    return () => {
+      console.log('📍 LoginScreen unmounting');
+    };
+  }, []);
+
   const handleSignIn = async () => {
+    console.log('🔐 Sign in button pressed');
+    
     if (!email || !password) {
+      console.log('⚠️ Empty credentials');
       Alert.alert('Error', 'Email and password cannot be empty.');
       return;
     }
 
+    console.log('🔐 Attempting sign in for:', email);
     setLoading(true);
     
     try {
-      // Add timeout protection to the signIn call
       const signInPromise = signIn(email, password);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timed out. Please check your internet connection.')), 10000)
@@ -39,19 +53,30 @@ export default function LoginScreen({ navigation }) {
 
       const { data, error } = await Promise.race([signInPromise, timeoutPromise]);
       
+      console.log('📊 Sign in result - data:', !!data, 'error:', !!error);
+      
       if (error) {
+        console.log('❌ Sign in error:', error.message);
         Alert.alert('Sign In Failed', error.message || 'Unable to sign in. Please try again.');
       } else if (data) {
-        // Success - the auth listener in App.js will handle navigation
-        console.log('Sign in successful');
+        console.log('✅ Sign in successful for user:', data.user?.id);
+        console.log('🔑 Session exists:', !!data.session);
+        
+        // Wait a moment for auth listener to trigger
+        console.log('⏳ Waiting for auth state change...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log('🎯 Auth state should have changed by now');
+        // The auth listener in App.js should handle navigation automatically
       }
     } catch (error) {
-      console.error('Sign in error:', error);
+      console.error('💥 Sign in error:', error);
       Alert.alert(
         'Connection Error', 
         error.message || 'Unable to connect to server. Please check your internet connection and try again.'
       );
     } finally {
+      console.log('🏁 Sign in process complete, setting loading to false');
       setLoading(false);
     }
   };
@@ -101,6 +126,9 @@ export default function LoginScreen({ navigation }) {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#4ade80" />
                 <Text style={styles.loadingText}>Signing in...</Text>
+                <Text style={[styles.loadingText, { fontSize: 12, marginTop: 10 }]}>
+                  Check console for debug logs
+                </Text>
               </View>
             ) : (
               <>

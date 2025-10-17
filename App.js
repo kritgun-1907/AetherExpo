@@ -1,24 +1,26 @@
-// App.js - Fixed with proper imports and network timeout handling
+// App.js - FIXED VERSION with proper auth navigation
 import 'react-native-gesture-handler';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, Text, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 
+// Import supabase
+import { supabase } from './src/api/supabase';
+import EmissionSyncService from './src/services/EmissionSyncService';
+
 // Import navigators
 import TabNavigator from './src/navigation/TabNavigator';
 
-// Import ALL screens including onboarding
+// Import ALL screens
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
@@ -28,97 +30,77 @@ import WelcomeScreen from './src/screens/onboarding/WelcomeScreen';
 import PermissionsScreen from './src/screens/onboarding/PermissionsScreen';
 import SetupScreen from './src/screens/onboarding/SetupScreen';
 
-// Main Screens
-import HomeScreen from './HomeScreen';
-import TrackingScreen from './TrackingScreen';
-import ProfileScreen from './ProfileScreen'; 
-import LeaderboardScreen from './src/screens/main/LeaderboardScreen';
-import ChallengesScreen from './src/screens/main/ChallengesScreen';
+// Additional Screens
 import GiftVoucherScreen from './src/screens/main/GiftVoucherScreen';
 import CarbonOffsetScreen from './src/screens/main/CarbonOffsetScreen';
 import PaymentScreen from './src/screens/main/PaymentScreen';
-import EmissionSyncService from './src/services/EmissionSyncService';
 
-// Import Supabase
-import { supabase } from './src/api/supabase';
+const Stack = createStackNavigator();
+const MainStack = createStackNavigator();
+const AuthStack = createStackNavigator();
+const OnboardingStack = createStackNavigator();
 
-// Keep the splash screen visible while we fetch resources
+const prefix = Linking.createURL('/');
+
+// Keep splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
-const prefix = 'aetherexpo://';
-const Stack = createStackNavigator();
-const Tab = createBottomTabNavigator();
-
-// Onboarding Stack
-function OnboardingStack() {
+// Auth Navigator
+function AuthStackNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Permissions" component={PermissionsScreen} />
-      <Stack.Screen name="Setup" component={SetupScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-    </Stack.Navigator>
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    </AuthStack.Navigator>
   );
 }
 
-// Auth Stack
-function AuthStack() {
+// Onboarding Navigator
+function OnboardingStackNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-    </Stack.Navigator>
+    <OnboardingStack.Navigator screenOptions={{ headerShown: false }}>
+      <OnboardingStack.Screen name="Welcome" component={WelcomeScreen} />
+      <OnboardingStack.Screen name="Permissions" component={PermissionsScreen} />
+      <OnboardingStack.Screen name="Setup" component={SetupScreen} />
+    </OnboardingStack.Navigator>
   );
 }
 
-// Main Stack Navigator
+// Main Stack with Tabs + Modal Screens
 function MainStackNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="MainTabs" component={TabNavigator} />
-      <Stack.Screen 
+    <MainStack.Navigator screenOptions={{ headerShown: false }}>
+      {/* Main Tab Navigator */}
+      <MainStack.Screen name="MainTabs" component={TabNavigator} />
+      
+      {/* Modal Screens */}
+      <MainStack.Screen 
+        name="PaymentScreen" 
+        component={PaymentScreen}
+        options={{ presentation: 'modal' }}
+      />
+      <MainStack.Screen 
         name="GiftVoucher" 
         component={GiftVoucherScreen}
-        options={{
-          headerShown: true,
-          title: 'Gift Vouchers',
-          headerBackTitleVisible: false,
-        }}
+        options={{ headerShown: true, title: 'Gift Vouchers' }}
       />
-      <Stack.Screen 
+      <MainStack.Screen 
         name="CarbonOffset" 
         component={CarbonOffsetScreen}
-        options={{
-          headerShown: true,
-          title: 'Carbon Offsets',
-          headerBackTitleVisible: false,
-        }}
+        options={{ headerShown: true, title: 'Carbon Offsets' }}
       />
-       <Stack.Screen
-        name="PaymentScreen"
-        component={PaymentScreen}
-        options={{
-          presentation: 'modal',
-          headerShown: false,
-        }}
-      />
-    </Stack.Navigator>
+    </MainStack.Navigator>
   );
 }
 
-// Load fonts with error handling
+// Load fonts
 async function loadResourcesAsync() {
   try {
     await Font.loadAsync({
-      // Only load fonts if you're actually using custom fonts
-      // Otherwise, comment these out
-      // 'custom-font': require('./assets/fonts/custom-font.ttf'),
+      // Add custom fonts if needed
     });
   } catch (e) {
-    // We might want to provide this error information to an error reporting service
     console.warn('Error loading fonts:', e);
   }
 }
@@ -162,6 +144,7 @@ function AppContent() {
             },
             GiftVoucher: 'gift-voucher',
             CarbonOffset: 'carbon-offset',
+            PaymentScreen: 'payment',
           },
         },
       },
@@ -184,94 +167,121 @@ function AppContent() {
     loadResources();
   }, []);
 
+  // Check first launch
   useEffect(() => {
     checkFirstLaunch();
   }, []);
 
- const checkFirstLaunch = async () => {
-  console.log('🔍 Starting checkFirstLaunch...');
-  try {
-    const hasLaunched = await AsyncStorage.getItem('hasLaunched');
-    const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
-    
-    console.log('📱 hasLaunched:', hasLaunched);
-    console.log('✅ onboardingComplete:', onboardingComplete);
-    
-    if (hasLaunched === null) {
-      console.log('👋 First launch detected');
-      await AsyncStorage.setItem('hasLaunched', 'true');
-      setIsFirstLaunch(true);
-      setIsLoggedIn(false);
-      setIsLoading(false);
-      return;
-    } else if (onboardingComplete !== 'true') {
-      console.log('⚠️ Onboarding incomplete');
-      setIsFirstLaunch(true);
-      setIsLoggedIn(false);
-      setIsLoading(false);
-      return;
-    } else {
-      console.log('✓ Returning user');
-      setIsFirstLaunch(false);
-    }
+  const checkFirstLaunch = async () => {
+    console.log('🔍 Starting checkFirstLaunch...');
+    try {
+      const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+      const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
+      
+      console.log('📱 hasLaunched:', hasLaunched);
+      console.log('✅ onboardingComplete:', onboardingComplete);
+      
+      if (hasLaunched === null) {
+        console.log('👋 First launch detected');
+        await AsyncStorage.setItem('hasLaunched', 'true');
+        setIsFirstLaunch(true);
+        setIsLoggedIn(false);
+        setIsLoading(false);
+        return;
+      } else if (onboardingComplete !== 'true') {
+        console.log('⚠️ Onboarding incomplete');
+        setIsFirstLaunch(true);
+        setIsLoggedIn(false);
+        setIsLoading(false);
+        return;
+      } else {
+        console.log('✓ Returning user');
+        setIsFirstLaunch(false);
+      }
 
-    console.log('🔐 Checking Supabase session...');
-    const sessionPromise = supabase.auth.getSession();
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Session timeout')), 8000)
+      // Check current session
+      console.log('🔐 Checking Supabase session...');
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.log('❌ Session error:', error.message);
+        setIsLoggedIn(false);
+      } else if (session) {
+        console.log('✓ Session found, user is logged in');
+        setIsLoggedIn(true);
+      } else {
+        console.log('⚠️ No session found');
+        setIsLoggedIn(false);
+      }
+      
+    } catch (error) {
+      console.error('💥 Error in checkFirstLaunch:', error);
+      setIsFirstLaunch(false);
+      setIsLoggedIn(false);
+    } finally {
+      console.log('🏁 Setting isLoading to false');
+      setIsLoading(false);
+    }
+  };
+
+  // Initialize EmissionSyncService when user is logged in
+  useEffect(() => {
+    const initializeSync = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await EmissionSyncService.initialize(user.id);
+        console.log('✅ EmissionSyncService initialized');
+      }
+    };
+    
+    if (isLoggedIn) {
+      initializeSync();
+    }
+    
+    return () => {
+      EmissionSyncService.cleanup();
+    };
+  }, [isLoggedIn]);
+
+  // Set up auth state listener - THIS IS THE KEY FIX
+  useEffect(() => {
+    console.log('🎧 Setting up auth state listener...');
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔔 Auth state changed:', event);
+        console.log('👤 Session exists:', !!session);
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log('✅ User signed in, updating state...');
+          setIsLoggedIn(true);
+          setIsLoading(false);
+        } else if (event === 'SIGNED_OUT') {
+          console.log('👋 User signed out, updating state...');
+          setIsLoggedIn(false);
+          setIsLoading(false);
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          console.log('🔄 Token refreshed');
+          setIsLoggedIn(true);
+        } else if (session) {
+          // Handle other events with active session
+          console.log('📝 Session update:', event);
+          setIsLoggedIn(true);
+        } else {
+          console.log('⚠️ No session in auth state change');
+          setIsLoggedIn(false);
+        }
+      }
     );
 
-    try {
-      const { data: { session } } = await Promise.race([
-        sessionPromise,
-        timeoutPromise
-      ]);
-      console.log('✓ Session check complete:', !!session);
-      setIsLoggedIn(!!session);
-    } catch (sessionError) {
-      console.log('❌ Session check failed:', sessionError.message);
-      setIsLoggedIn(false);
-    }
-    
-  } catch (error) {
-    console.error('💥 Error in checkFirstLaunch:', error);
-    setIsFirstLaunch(false);
-    setIsLoggedIn(false);
-  } finally {
-    console.log('🏁 Setting isLoading to false');
-    setIsLoading(false);
-  }
-};
-
-  useEffect(() => {
-  const initializeSync = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await EmissionSyncService.initialize(user.id);
-      console.log('✅ EmissionSyncService initialized');
-    }
-  };
-  
-  initializeSync();
-  
-  return () => {
-    EmissionSyncService.cleanup();
-  };
-}, []);
-
-
-  useEffect(() => {
-    // Set up the real-time listener for auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
-    });
-
-    // Cleanup the listener when the app closes
+    // Cleanup subscription on unmount
     return () => {
-      authListener.subscription.unsubscribe();
+      console.log('🧹 Cleaning up auth listener');
+      subscription.unsubscribe();
     };
   }, []);
 
+  // Show loading screen while initializing
   if (!isLoadingComplete || isLoading) {
     return (
       <View style={{ 
@@ -286,18 +296,20 @@ function AppContent() {
     );
   }
 
+  console.log('🎯 Current state - isFirstLaunch:', isFirstLaunch, 'isLoggedIn:', isLoggedIn);
+
   return (
     <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isFirstLaunch ? (
           // Show onboarding for first-time users
-          <Stack.Screen name="Onboarding" component={OnboardingStack} />
+          <Stack.Screen name="Onboarding" component={OnboardingStackNavigator} />
         ) : isLoggedIn ? (
           // Show main app for logged-in users
           <Stack.Screen name="Main" component={MainStackNavigator} />
         ) : (
           // Show auth for non-logged-in returning users
-          <Stack.Screen name="Auth" component={AuthStack} />
+          <Stack.Screen name="Auth" component={AuthStackNavigator} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

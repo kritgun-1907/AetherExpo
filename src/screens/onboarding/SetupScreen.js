@@ -1,4 +1,4 @@
-// src/screens/onboarding/SetupScreen.js
+// src/screens/onboarding/SetupScreen.js - WITH DARK BACKGROUND
 import React, { useState } from 'react';
 import {
   View,
@@ -11,18 +11,23 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ImageBackground,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../api/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width, height } = Dimensions.get('window');
+const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
 
 export default function SetupScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   
-  // User profile data
   const [userData, setUserData] = useState({
     fullName: '',
     weeklyGoal: '50',
@@ -32,17 +37,17 @@ export default function SetupScreen({ navigation }) {
   });
 
   const transportModes = [
-    { id: 'car', label: 'Car', emoji: '🚗', carbonFactor: 0.21 },
-    { id: 'public', label: 'Public Transport', emoji: '🚌', carbonFactor: 0.089 },
-    { id: 'bike', label: 'Bike/Walk', emoji: '🚴', carbonFactor: 0 },
-    { id: 'mixed', label: 'Mixed', emoji: '🚗🚌', carbonFactor: 0.15 },
+    { id: 'car', label: 'Car', emoji: '🚗', carbonText: '~21g CO₂/km' },
+    { id: 'public', label: 'Public Transport', emoji: '🚌', carbonText: '~9g CO₂/km' },
+    { id: 'bike', label: 'Bike/Walk', emoji: '🚴', carbonText: '~0g CO₂/km' },
+    { id: 'mixed', label: 'Mixed', emoji: '🚗🚌', carbonText: '~15g CO₂/km' },
   ];
 
   const dietTypes = [
-    { id: 'meat', label: 'Meat Lover', emoji: '🥩', carbonFactor: 3.3 },
-    { id: 'balanced', label: 'Balanced', emoji: '🥗', carbonFactor: 2.5 },
-    { id: 'vegetarian', label: 'Vegetarian', emoji: '🥦', carbonFactor: 1.7 },
-    { id: 'vegan', label: 'Vegan', emoji: '🌱', carbonFactor: 1.5 },
+    { id: 'meat', label: 'Meat Lover', emoji: '🥩', carbonText: '~3.3kg CO₂/day' },
+    { id: 'balanced', label: 'Balanced', emoji: '🥗', carbonText: '~2.5kg CO₂/day' },
+    { id: 'vegetarian', label: 'Vegetarian', emoji: '🥦', carbonText: '~1.7kg CO₂/day' },
+    { id: 'vegan', label: 'Vegan', emoji: '🌱', carbonText: '~1.5kg CO₂/day' },
   ];
 
   const steps = [
@@ -52,13 +57,9 @@ export default function SetupScreen({ navigation }) {
       component: (
         <View style={styles.stepContent}>
           <TextInput
-            style={[styles.input, { 
-              backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider,
-              color: theme.primaryText,
-              borderColor: theme.border,
-            }]}
+            style={styles.input}
             placeholder="Your full name"
-            placeholderTextColor={theme.secondaryText}
+            placeholderTextColor="rgba(255, 255, 255, 0.5)"
             value={userData.fullName}
             onChangeText={(text) => setUserData(prev => ({ ...prev, fullName: text }))}
             autoCapitalize="words"
@@ -74,12 +75,8 @@ export default function SetupScreen({ navigation }) {
       component: (
         <View style={styles.stepContent}>
           <View style={styles.goalContainer}>
-            <Text style={[styles.goalValue, { color: theme.accentText }]}>
-              {userData.weeklyGoal}
-            </Text>
-            <Text style={[styles.goalUnit, { color: theme.secondaryText }]}>
-              kg CO₂ / week
-            </Text>
+            <Text style={styles.goalValue}>{userData.weeklyGoal}</Text>
+            <Text style={styles.goalUnit}>kg CO₂ / week</Text>
           </View>
           
           <View style={styles.goalPresets}>
@@ -90,39 +87,21 @@ export default function SetupScreen({ navigation }) {
                   styles.presetButton,
                   {
                     backgroundColor: userData.weeklyGoal === value 
-                      ? theme.accentText 
-                      : isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider,
+                      ? '#10B981' 
+                      : 'rgba(255, 255, 255, 0.1)',
                   }
                 ]}
                 onPress={() => setUserData(prev => ({ ...prev, weeklyGoal: value }))}
               >
                 <Text style={[
                   styles.presetText,
-                  { 
-                    color: userData.weeklyGoal === value 
-                      ? '#FFFFFF' 
-                      : theme.primaryText 
-                  }
+                  { color: userData.weeklyGoal === value ? '#FFFFFF' : 'rgba(255, 255, 255, 0.8)' }
                 ]}>
                   {value}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-          
-          <TextInput
-            style={[styles.input, { 
-              backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider,
-              color: theme.primaryText,
-              borderColor: theme.border,
-              marginTop: 20,
-            }]}
-            placeholder="Or enter custom goal"
-            placeholderTextColor={theme.secondaryText}
-            value={userData.weeklyGoal}
-            onChangeText={(text) => setUserData(prev => ({ ...prev, weeklyGoal: text }))}
-            keyboardType="numeric"
-          />
         </View>
       ),
       validation: () => parseInt(userData.weeklyGoal) > 0,
@@ -140,36 +119,16 @@ export default function SetupScreen({ navigation }) {
                   styles.optionCard,
                   {
                     backgroundColor: userData.transportMode === mode.id 
-                      ? theme.accentText 
-                      : isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-                    borderColor: userData.transportMode === mode.id 
-                      ? theme.accentText 
-                      : theme.border,
+                      ? 'rgba(16, 185, 129, 0.2)' 
+                      : 'rgba(255, 255, 255, 0.1)',
+                    borderColor: userData.transportMode === mode.id ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
                   }
                 ]}
                 onPress={() => setUserData(prev => ({ ...prev, transportMode: mode.id }))}
               >
                 <Text style={styles.optionEmoji}>{mode.emoji}</Text>
-                <Text style={[
-                  styles.optionLabel,
-                  { 
-                    color: userData.transportMode === mode.id 
-                      ? '#FFFFFF' 
-                      : theme.primaryText 
-                  }
-                ]}>
-                  {mode.label}
-                </Text>
-                <Text style={[
-                  styles.optionSubtext,
-                  { 
-                    color: userData.transportMode === mode.id 
-                      ? 'rgba(255, 255, 255, 0.8)' 
-                      : theme.secondaryText 
-                  }
-                ]}>
-                  ~{(mode.carbonFactor * 100).toFixed(0)}g CO₂/km
-                </Text>
+                <Text style={styles.optionLabel}>{mode.label}</Text>
+                <Text style={styles.optionSubtext}>{mode.carbonText}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -178,8 +137,8 @@ export default function SetupScreen({ navigation }) {
       validation: () => userData.transportMode !== '',
     },
     {
-      title: "Your diet preference",
-      subtitle: "Food choices impact carbon footprint",
+      title: "What's your diet?",
+      subtitle: "This helps estimate food emissions",
       component: (
         <View style={styles.stepContent}>
           <View style={styles.optionsGrid}>
@@ -190,36 +149,16 @@ export default function SetupScreen({ navigation }) {
                   styles.optionCard,
                   {
                     backgroundColor: userData.dietType === diet.id 
-                      ? theme.accentText 
-                      : isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-                    borderColor: userData.dietType === diet.id 
-                      ? theme.accentText 
-                      : theme.border,
+                      ? 'rgba(16, 185, 129, 0.2)' 
+                      : 'rgba(255, 255, 255, 0.1)',
+                    borderColor: userData.dietType === diet.id ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
                   }
                 ]}
                 onPress={() => setUserData(prev => ({ ...prev, dietType: diet.id }))}
               >
                 <Text style={styles.optionEmoji}>{diet.emoji}</Text>
-                <Text style={[
-                  styles.optionLabel,
-                  { 
-                    color: userData.dietType === diet.id 
-                      ? '#FFFFFF' 
-                      : theme.primaryText 
-                  }
-                ]}>
-                  {diet.label}
-                </Text>
-                <Text style={[
-                  styles.optionSubtext,
-                  { 
-                    color: userData.dietType === diet.id 
-                      ? 'rgba(255, 255, 255, 0.8)' 
-                      : theme.secondaryText 
-                  }
-                ]}>
-                  ~{diet.carbonFactor}kg CO₂/day
-                </Text>
+                <Text style={styles.optionLabel}>{diet.label}</Text>
+                <Text style={styles.optionSubtext}>{diet.carbonText}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -234,7 +173,7 @@ export default function SetupScreen({ navigation }) {
         <View style={styles.stepContent}>
           <View style={styles.householdContainer}>
             <TouchableOpacity
-              style={[styles.counterButton, { backgroundColor: theme.divider }]}
+              style={[styles.counterButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
               onPress={() => {
                 const current = parseInt(userData.householdSize);
                 if (current > 1) {
@@ -242,20 +181,18 @@ export default function SetupScreen({ navigation }) {
                 }
               }}
             >
-              <Ionicons name="remove" size={24} color={theme.primaryText} />
+              <Ionicons name="remove" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             
             <View style={styles.counterValue}>
-              <Text style={[styles.counterNumber, { color: theme.primaryText }]}>
-                {userData.householdSize}
-              </Text>
-              <Text style={[styles.counterLabel, { color: theme.secondaryText }]}>
+              <Text style={styles.counterNumber}>{userData.householdSize}</Text>
+              <Text style={styles.counterLabel}>
                 {parseInt(userData.householdSize) === 1 ? 'person' : 'people'}
               </Text>
             </View>
             
             <TouchableOpacity
-              style={[styles.counterButton, { backgroundColor: theme.accentText }]}
+              style={[styles.counterButton, { backgroundColor: '#10B981' }]}
               onPress={() => {
                 const current = parseInt(userData.householdSize);
                 if (current < 10) {
@@ -294,11 +231,9 @@ export default function SetupScreen({ navigation }) {
     setLoading(true);
     
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
-        // Update user profile
         await supabase
           .from('user_profiles')
           .update({
@@ -314,7 +249,6 @@ export default function SetupScreen({ navigation }) {
           .eq('id', user.id);
       }
       
-      // Save to AsyncStorage
       await AsyncStorage.setItem('setupComplete', 'true');
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       
@@ -332,89 +266,109 @@ export default function SetupScreen({ navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={theme.background} 
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      <View style={styles.header}>
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { backgroundColor: theme.divider }]}>
-            <View 
-              style={[
-                styles.progressFill,
-                { 
-                  backgroundColor: theme.accentText,
-                  width: `${((currentStep + 1) / steps.length) * 100}%`
-                }
-              ]} 
-            />
-          </View>
-          <Text style={[styles.progressText, { color: theme.secondaryText }]}>
-            Step {currentStep + 1} of {steps.length}
-          </Text>
-        </View>
-      </View>
-
-      <ScrollView 
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
+      <ImageBackground 
+        source={BACKGROUND_IMAGE} 
+        resizeMode="cover" 
+        style={styles.backgroundImage}
       >
-        <View style={styles.stepHeader}>
-          <Text style={[styles.stepTitle, { color: theme.primaryText }]}>
-            {steps[currentStep].title}
-          </Text>
-          <Text style={[styles.stepSubtitle, { color: theme.secondaryText }]}>
-            {steps[currentStep].subtitle}
-          </Text>
-        </View>
-
-        {steps[currentStep].component}
-      </ScrollView>
-
-      <View style={[styles.footer, { backgroundColor: theme.background }]}>
-        <View style={styles.buttonRow}>
-          {currentStep > 0 && (
-            <TouchableOpacity 
-              style={[styles.backButton, { borderColor: theme.border }]}
-              onPress={handleBack}
-            >
-              <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
-            </TouchableOpacity>
-          )}
-          
-          <TouchableOpacity 
-            style={[
-              styles.nextButton,
-              { 
-                backgroundColor: theme.accentText,
-                flex: currentStep === 0 ? 1 : undefined,
-                marginLeft: currentStep > 0 ? 10 : 0,
-              }
-            ]}
-            onPress={handleNext}
-            disabled={loading}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.8)']}
+          style={styles.overlay}
+        >
+          <KeyboardAvoidingView 
+            style={styles.keyboardView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
-            <Text style={styles.nextButtonText}>
-              {loading ? 'Saving...' : currentStep === steps.length - 1 ? 'Complete Setup' : 'Continue'}
-            </Text>
-            {!loading && currentStep < steps.length - 1 && (
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" style={{ marginLeft: 8 }} />
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+            {/* Progress Header */}
+            <View style={styles.header}>
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill,
+                      { width: `${((currentStep + 1) / steps.length) * 100}%` }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  Step {currentStep + 1} of {steps.length}
+                </Text>
+              </View>
+            </View>
+
+            {/* Content */}
+            <ScrollView 
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.stepHeader}>
+                <Text style={styles.stepTitle}>
+                  {steps[currentStep].title}
+                </Text>
+                <Text style={styles.stepSubtitle}>
+                  {steps[currentStep].subtitle}
+                </Text>
+              </View>
+
+              {steps[currentStep].component}
+            </ScrollView>
+
+            {/* Footer Buttons */}
+            <View style={styles.footer}>
+              <View style={styles.buttonRow}>
+                {currentStep > 0 && (
+                  <TouchableOpacity 
+                    style={styles.backButton}
+                    onPress={handleBack}
+                  >
+                    <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+                
+                <TouchableOpacity 
+                  style={[
+                    styles.nextButton,
+                    { 
+                      flex: 1,
+                      marginLeft: currentStep > 0 ? 12 : 0,
+                    }
+                  ]}
+                  onPress={handleNext}
+                  disabled={loading}
+                >
+                  <Text style={styles.nextButtonText}>
+                    {loading ? 'Saving...' : currentStep === steps.length - 1 ? 'Complete Setup' : 'Continue'}
+                  </Text>
+                  {!loading && currentStep < steps.length - 1 && (
+                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </LinearGradient>
+      </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  backgroundImage: {
+    flex: 1,
+    width,
+    height,
+  },
+  overlay: {
+    flex: 1,
+  },
+  keyboardView: {
     flex: 1,
   },
   header: {
@@ -427,66 +381,77 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   progressFill: {
     height: '100%',
+    backgroundColor: '#10B981',
     borderRadius: 3,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 14,
+    fontWeight: '500',
     textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   content: {
     flex: 1,
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 140,
   },
   stepHeader: {
-    marginBottom: 30,
+    marginBottom: 32,
   },
   stepTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 12,
+    color: '#FFFFFF',
   },
   stepSubtitle: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 24,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   stepContent: {
     marginBottom: 20,
   },
   input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    padding: 18,
+    fontSize: 18,
+    color: '#FFFFFF',
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   goalContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 32,
   },
   goalValue: {
-    fontSize: 48,
+    fontSize: 64,
     fontWeight: 'bold',
+    color: '#10B981',
   },
   goalUnit: {
-    fontSize: 16,
-    marginTop: 5,
+    fontSize: 18,
+    marginTop: 8,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   goalPresets: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginBottom: 10,
   },
   presetButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 20,
     marginHorizontal: 5,
   },
@@ -508,24 +473,26 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   optionEmoji: {
-    fontSize: 36,
-    marginBottom: 10,
+    fontSize: 44,
+    marginBottom: 12,
   },
   optionLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 6,
     textAlign: 'center',
+    color: '#FFFFFF',
   },
   optionSubtext: {
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   householdContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 30,
+    marginTop: 40,
   },
   counterButton: {
     width: 60,
@@ -535,46 +502,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   counterValue: {
-    marginHorizontal: 40,
+    marginHorizontal: 50,
     alignItems: 'center',
   },
   counterNumber: {
-    fontSize: 48,
+    fontSize: 64,
     fontWeight: 'bold',
+    color: '#10B981',
   },
   counterLabel: {
-    fontSize: 16,
-    marginTop: 5,
+    fontSize: 18,
+    marginTop: 8,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   footer: {
-    padding: 20,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     paddingBottom: 40,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.05)',
   },
   buttonRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   backButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   nextButton: {
-    flex: 1,
     flexDirection: 'row',
-    paddingVertical: 16,
-    borderRadius: 25,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
   },
   nextButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });

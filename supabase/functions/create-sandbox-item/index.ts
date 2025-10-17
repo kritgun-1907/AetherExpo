@@ -15,12 +15,13 @@ serve(async (req) => {
   }
 
   try {
-    const { public_token } = await req.json();
+    const { user_id } = await req.json();
 
-    console.log('Exchanging public token');
+    console.log('Creating sandbox item for user:', user_id);
 
-    // FIX: Use backticks for template literal
-    const plaidUrl = `https://${PLAID_ENV}.plaid.com/item/public_token/exchange`;
+    // Use Plaid's sandbox public token creation endpoint
+    // This simulates what would happen after a user completes Link
+    const plaidUrl = `https://${PLAID_ENV}.plaid.com/sandbox/public_token/create`;
     console.log('Plaid URL:', plaidUrl);
 
     const response = await fetch(plaidUrl, {
@@ -31,16 +32,17 @@ serve(async (req) => {
       body: JSON.stringify({
         client_id: PLAID_CLIENT_ID,
         secret: PLAID_SECRET,
-        public_token: public_token,
+        institution_id: 'ins_109508', // First Platypus Bank (test institution)
+        initial_products: ['transactions'],
       }),
     });
 
     const data = await response.json();
-    console.log('Exchange response:', data);
+    console.log('Sandbox item response:', data);
 
     if (!response.ok) {
       console.error('Plaid API error:', data);
-      throw new Error(data.error_message || 'Failed to exchange token');
+      throw new Error(data.error_message || 'Failed to create sandbox item');
     }
 
     return new Response(
@@ -53,7 +55,7 @@ serve(async (req) => {
       },
     );
   } catch (error) {
-    console.error('Error in exchange-public-token function:', error);
+    console.error('Error in create-sandbox-item function:', error);
     return new Response(
       JSON.stringify({ 
         error: error.message,

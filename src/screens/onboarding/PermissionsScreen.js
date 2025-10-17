@@ -1,4 +1,4 @@
-// src/screens/onboarding/PermissionsScreen.js
+// src/screens/onboarding/PermissionsScreen.js - WITH DARK BACKGROUND
 import React, { useState } from 'react';
 import {
   View,
@@ -7,81 +7,66 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Platform,
   StatusBar,
+  ImageBackground,
+  Dimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const { width, height } = Dimensions.get('window');
+const BACKGROUND_IMAGE = require('../../../assets/hero-carbon-tracker.jpg');
+
 export default function PermissionsScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme();
   const [permissions, setPermissions] = useState({
     notifications: null,
     location: null,
-    bankConnection: false, // This is optional
+    bankConnection: null,
   });
   const [loading, setLoading] = useState(false);
 
   const requestNotificationPermission = async () => {
     try {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
+      const { status } = await Notifications.requestPermissionsAsync();
+      setPermissions(prev => ({ ...prev, notifications: status === 'granted' }));
       
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
+      if (status === 'granted') {
+        Alert.alert('Success', 'Notifications enabled!');
       }
-      
-      setPermissions(prev => ({ ...prev, notifications: finalStatus === 'granted' }));
-      
-      if (finalStatus === 'granted') {
-        // Configure notifications
-        await Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-          }),
-        });
-      }
-      
-      return finalStatus === 'granted';
     } catch (error) {
       console.error('Error requesting notification permission:', error);
-      return false;
+      setPermissions(prev => ({ ...prev, notifications: false }));
     }
   };
 
   const requestLocationPermission = async () => {
     try {
-      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
-      let finalStatus = existingStatus;
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setPermissions(prev => ({ ...prev, location: status === 'granted' }));
       
-      if (existingStatus !== 'granted') {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        finalStatus = status;
+      if (status === 'granted') {
+        Alert.alert('Success', 'Location access enabled!');
       }
-      
-      setPermissions(prev => ({ ...prev, location: finalStatus === 'granted' }));
-      return finalStatus === 'granted';
     } catch (error) {
       console.error('Error requesting location permission:', error);
-      return false;
+      setPermissions(prev => ({ ...prev, location: false }));
     }
   };
 
   const handleRequestAllPermissions = async () => {
     setLoading(true);
     
-    const notifGranted = await requestNotificationPermission();
-    const locationGranted = await requestLocationPermission();
+    await requestNotificationPermission();
+    await requestLocationPermission();
     
     setLoading(false);
     
-    if (notifGranted && locationGranted) {
+    const allGranted = permissions.notifications && permissions.location;
+    
+    if (allGranted) {
       Alert.alert(
         'All Set!',
         'All permissions granted successfully.',
@@ -100,7 +85,6 @@ export default function PermissionsScreen({ navigation }) {
   };
 
   const handleContinue = async () => {
-    // Mark onboarding as complete
     await AsyncStorage.setItem('onboardingComplete', 'true');
     navigation.navigate('Setup');
   };
@@ -128,8 +112,8 @@ export default function PermissionsScreen({ navigation }) {
       style={[
         styles.permissionItem,
         {
-          backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-          borderColor: status ? '#10B981' : theme.border,
+          backgroundColor: 'rgba(255, 255, 255, 0.15)',
+          borderColor: status ? '#10B981' : 'rgba(255, 255, 255, 0.3)',
           borderWidth: status ? 2 : 1,
         }
       ]}
@@ -138,29 +122,23 @@ export default function PermissionsScreen({ navigation }) {
     >
       <View style={[
         styles.iconContainer,
-        { backgroundColor: status ? '#D1FAE5' : theme.divider }
+        { backgroundColor: status ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.2)' }
       ]}>
         <Ionicons 
           name={icon} 
           size={24} 
-          color={status ? '#10B981' : theme.secondaryText} 
+          color={status ? '#10B981' : 'rgba(255, 255, 255, 0.8)'} 
         />
       </View>
       
       <View style={styles.permissionContent}>
         <View style={styles.permissionHeader}>
-          <Text style={[styles.permissionTitle, { color: theme.primaryText }]}>
-            {title}
-          </Text>
+          <Text style={styles.permissionTitle}>{title}</Text>
           {optional && (
-            <Text style={[styles.optionalBadge, { color: theme.secondaryText }]}>
-              Optional
-            </Text>
+            <Text style={styles.optionalBadge}>Optional</Text>
           )}
         </View>
-        <Text style={[styles.permissionDescription, { color: theme.secondaryText }]}>
-          {description}
-        </Text>
+        <Text style={styles.permissionDescription}>{description}</Text>
       </View>
       
       <View style={styles.statusContainer}>
@@ -169,95 +147,99 @@ export default function PermissionsScreen({ navigation }) {
         ) : status === false ? (
           <Ionicons name="close-circle" size={24} color="#EF4444" />
         ) : (
-          <Ionicons name="chevron-forward" size={24} color={theme.secondaryText} />
+          <Ionicons name="chevron-forward" size={24} color="rgba(255, 255, 255, 0.6)" />
         )}
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={theme.background} 
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <ImageBackground 
+        source={BACKGROUND_IMAGE} 
+        resizeMode="cover" 
+        style={styles.backgroundImage}
       >
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.primaryText }]}>
-            Let's Set Things Up
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
-            We need a few permissions to give you the best experience
-          </Text>
-        </View>
-
-        <View style={styles.permissionsContainer}>
-          <PermissionItem
-            title="Push Notifications"
-            description="Get reminders to log your emissions and celebrate achievements"
-            icon="notifications-outline"
-            status={permissions.notifications}
-            onPress={requestNotificationPermission}
-          />
-
-          <PermissionItem
-            title="Location Access"
-            description="Automatically track transportation emissions based on your movement"
-            icon="location-outline"
-            status={permissions.location}
-            onPress={requestLocationPermission}
-          />
-
-          <PermissionItem
-            title="Bank Connection"
-            description="Connect your bank to automatically track carbon from purchases"
-            icon="card-outline"
-            status={permissions.bankConnection}
-            onPress={() => {
-              Alert.alert(
-                'Bank Connection',
-                'You can connect your bank account later from the Profile settings.',
-                [{ text: 'OK' }]
-              );
-              setPermissions(prev => ({ ...prev, bankConnection: true }));
-            }}
-            optional={true}
-          />
-        </View>
-
-        <View style={styles.infoCard}>
-          <Ionicons name="shield-checkmark-outline" size={24} color="#10B981" />
-          <Text style={[styles.infoText, { color: theme.secondaryText }]}>
-            Your data is encrypted and never shared with third parties. You can change these permissions anytime in settings.
-          </Text>
-        </View>
-      </ScrollView>
-
-      <View style={[styles.footer, { backgroundColor: theme.background }]}>
-        <TouchableOpacity 
-          style={[styles.requestButton, { backgroundColor: theme.accentText }]}
-          onPress={handleRequestAllPermissions}
-          disabled={loading}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.8)']}
+          style={styles.overlay}
         >
-          <Text style={styles.requestButtonText}>
-            {loading ? 'Setting Up...' : 'Grant Permissions'}
-          </Text>
-        </TouchableOpacity>
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.header}>
+              <Text style={styles.title}>Let's Set Things Up</Text>
+              <Text style={styles.subtitle}>
+                We need a few permissions to give you the best experience
+              </Text>
+            </View>
 
-        <TouchableOpacity 
-          style={styles.skipButton}
-          onPress={handleSkip}
-        >
-          <Text style={[styles.skipButtonText, { color: theme.secondaryText }]}>
-            Skip for Now
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <View style={styles.permissionsContainer}>
+              <PermissionItem
+                title="Push Notifications"
+                description="Get reminders to log your emissions and celebrate achievements"
+                icon="notifications-outline"
+                status={permissions.notifications}
+                onPress={requestNotificationPermission}
+              />
+
+              <PermissionItem
+                title="Location Access"
+                description="Automatically track transportation emissions based on your movement"
+                icon="location-outline"
+                status={permissions.location}
+                onPress={requestLocationPermission}
+              />
+
+              <PermissionItem
+                title="Bank Connection"
+                description="Connect your bank to automatically track carbon from purchases"
+                icon="card-outline"
+                status={permissions.bankConnection}
+                onPress={() => {
+                  Alert.alert(
+                    'Bank Connection',
+                    'You can connect your bank account later from the Profile settings.',
+                    [{ text: 'OK' }]
+                  );
+                  setPermissions(prev => ({ ...prev, bankConnection: true }));
+                }}
+                optional={true}
+              />
+            </View>
+
+            <View style={styles.infoCard}>
+              <Ionicons name="shield-checkmark-outline" size={24} color="#10B981" />
+              <Text style={styles.infoText}>
+                Your data is encrypted and never shared with third parties. You can change these permissions anytime in settings.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <TouchableOpacity 
+              style={styles.grantButton}
+              onPress={handleRequestAllPermissions}
+              disabled={loading}
+            >
+              <Text style={styles.grantButtonText}>
+                {loading ? 'Requesting Permissions...' : 'Grant Permissions'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.skipButton}
+              onPress={handleSkip}
+            >
+              <Text style={styles.skipButtonText}>Skip for Now</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
     </View>
   );
 }
@@ -266,40 +248,45 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  backgroundImage: {
+    flex: 1,
+    width,
+    height,
+  },
+  overlay: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 180,
   },
   header: {
-    marginBottom: 30,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    marginBottom: 32,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 10,
+    color: '#FFFFFF',
+    marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    lineHeight: 22,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 24,
   },
   permissionsContainer: {
-    marginBottom: 20,
+    paddingHorizontal: 20,
   },
   permissionItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
+    padding: 16,
     borderRadius: 16,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    marginBottom: 16,
+    alignItems: 'center',
   },
   iconContainer: {
     width: 48,
@@ -307,7 +294,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
   },
   permissionContent: {
     flex: 1,
@@ -320,60 +307,75 @@ const styles = StyleSheet.create({
   permissionTitle: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
     marginRight: 8,
   },
   optionalBadge: {
     fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
     fontStyle: 'italic',
   },
   permissionDescription: {
     fontSize: 14,
-    lineHeight: 18,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 20,
   },
   statusContainer: {
-    marginLeft: 10,
+    marginLeft: 8,
   },
   infoCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    padding: 15,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    padding: 16,
     borderRadius: 12,
-    marginTop: 10,
+    marginHorizontal: 20,
+    marginTop: 24,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
   infoText: {
     flex: 1,
-    marginLeft: 10,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginLeft: 12,
+    lineHeight: 20,
   },
   footer: {
-    padding: 20,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     paddingBottom: 40,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.05)',
   },
-  requestButton: {
-    paddingVertical: 18,
-    borderRadius: 30,
+  grantButton: {
+    backgroundColor: '#10B981',
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 5,
   },
-  requestButtonText: {
+  grantButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   skipButton: {
-    paddingVertical: 12,
+    height: 56,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   skipButtonText: {
+    color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 16,
+    fontWeight: '600',
   },
 });

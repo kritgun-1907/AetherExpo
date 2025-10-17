@@ -116,36 +116,74 @@ class PlaidService {
     this.accessToken = null;
   }
 
-  // Create Link Token
-  async createLinkToken(userId) {
-    try {
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-link-token`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabase.supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: PLAID_CONFIG.CLIENT_ID,
-          secret: PLAID_CONFIG.SECRET,
-          user: {
-            client_user_id: userId,
-          },
-          client_name: 'Aether Carbon Tracker',
-          products: PLAID_CONFIG.PRODUCTS,
-          country_codes: PLAID_CONFIG.COUNTRY_CODES,
-          language: 'en',
-        }),
-      });
+// REPLACE ONLY the createLinkToken method in your src/api/plaid.js file
 
-      const data = await response.json();
-      this.linkToken = data.link_token;
-      return data.link_token;
-    } catch (error) {
-      console.error('Error creating link token:', error);
-      throw error;
+async createLinkToken(userId) {
+  try {
+    console.log('Creating link token for user:', userId);
+    console.log('Supabase URL:', supabase.supabaseUrl);
+    
+    const functionUrl = `${supabase.supabaseUrl}/functions/v1/create-link-token`;
+    console.log('Function URL:', functionUrl);
+
+    const requestBody = {
+      user: {
+        client_user_id: userId,
+      },
+      client_name: 'Aether Carbon Tracker',
+      products: ['transactions'],
+      country_codes: ['US', 'CA', 'GB'],
+      language: 'en',
+    };
+
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabase.supabaseKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log('Response status:', response.status);
+    console.log('Response ok:', response.ok);
+
+    const responseText = await response.text();
+    console.log('Response text:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Failed to parse response:', parseError);
+      throw new Error(`Invalid response from server: ${responseText}`);
     }
+
+    if (!response.ok) {
+      console.error('Error response from function:', data);
+      throw new Error(data.error || data.error_message || 'Failed to create link token');
+    }
+
+    if (!data.link_token) {
+      console.error('No link_token in response:', data);
+      throw new Error('No link token returned from server');
+    }
+
+    console.log('Link token created successfully');
+    this.linkToken = data.link_token;
+    return data.link_token;
+    
+  } catch (error) {
+    console.error('Error creating link token:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    throw error;
   }
+}
 
   // Exchange Public Token for Access Token
   async exchangePublicToken(publicToken, userId) {

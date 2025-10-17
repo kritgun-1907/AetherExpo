@@ -1,4 +1,4 @@
-// src/screens/main/CarbonOffsetScreen.js - COMPLETE VERSION
+// src/screens/main/CarbonOffsetScreen.js - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,15 +7,16 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Image,
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { plaidService, OFFSET_PROVIDERS } from '../../api/plaid';
 import { supabase } from '../../api/supabase';
 import { useTheme } from '../../context/ThemeContext';
+import PlaidLinkButton from '../../components/PlaidLinkButton';
 
-export default function CarbonOffsetScreen() {
+export default function CarbonOffsetScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const [userEmissions, setUserEmissions] = useState(0);
   const [offsetAmount, setOffsetAmount] = useState('1');
@@ -23,10 +24,35 @@ export default function CarbonOffsetScreen() {
   const [userOffsets, setUserOffsets] = useState([]);
   const [totalOffset, setTotalOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [hasBankConnection, setHasBankConnection] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const checkBankConnection = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { data: connection, error } = await supabase
+        .from('user_bank_connections')
+        .select('access_token')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (error) {
+        console.log('Error checking bank connection:', error);
+        return false;
+      }
+
+      return !!connection;
+    } catch (error) {
+      console.error('Error checking bank connection:', error);
+      return false;
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -34,12 +60,20 @@ export default function CarbonOffsetScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get user's carbon emissions for the last 30 days
-      try {
-        const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
-        setUserEmissions(carbonData.totalCarbon || 0);
-      } catch (error) {
-        console.log('Error loading emissions:', error);
+      // Check if bank is connected
+      const bankConnected = await checkBankConnection();
+      setHasBankConnection(bankConnected);
+
+      // Only try to load transactions if bank is connected
+      if (bankConnected) {
+        try {
+          const carbonData = await plaidService.getTransactionsAndCalculateCarbon(user.id, 30);
+          setUserEmissions(carbonData.totalCarbon || 0);
+        } catch (error) {
+          console.log('Error loading emissions:', error.message);
+          setUserEmissions(0);
+        }
+      } else {
         setUserEmissions(0);
       }
 
@@ -65,6 +99,12 @@ export default function CarbonOffsetScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBankConnected = async () => {
+    // Reload data after bank connection
+    await loadData();
+    Alert.alert('Success', 'Bank connected! Your carbon emissions will now be tracked automatically.');
   };
 
   const purchaseOffset = async () => {
@@ -105,8 +145,8 @@ export default function CarbonOffsetScreen() {
                   `You've successfully offset ${tons} tons of CO₂!\n\nYour certificate ID will be emailed to you.`
                 );
                 
-                loadData(); // Reload data
-                setOffsetAmount('1'); // Reset form
+                loadData();
+                setOffsetAmount('1');
               } catch (error) {
                 Alert.alert('Purchase Failed', 'Failed to purchase offsets. Please try again.');
                 console.error('Purchase error:', error);
@@ -134,156 +174,148 @@ export default function CarbonOffsetScreen() {
       onPress={() => onSelect(providerId)}
     >
       <View style={styles.providerHeader}>
-        <Image 
-          source={{ uri: provider.logo }} 
-          style={styles.providerLogo}
-          defaultSource={require('../../../assets/icon.png')}
-        />
-        <View style={styles.providerInfo}>
-          <Text style={[styles.providerName, { color: theme.primaryText }]}>
-            {provider.name}
-          </Text>
-          <Text style={[styles.providerPrice, { color: theme.accentText }]}>
-            ${provider.pricePerTon}/ton CO₂
-          </Text>
-        </View>
-        <View style={styles.rating}>
+        <Text style={[styles.providerName, { color: theme.primaryText }]}>
+          {provider.name}
+        </Text>
+        <View style={styles.ratingContainer}>
           {[...Array(provider.rating)].map((_, i) => (
-            <Text key={i} style={styles.star}>⭐</Text>
+            <Ionicons key={i} name="star" size={14} color="#F59E0B" />
           ))}
         </View>
       </View>
       
-      <View style={styles.projectsList}>
-        <Text style={[styles.projectsTitle, { color: theme.secondaryText }]}>
-          Project Types:
-        </Text>
-        {provider.projects.map((project, index) => (
-          <Text key={index} style={[styles.projectItem, { color: theme.secondaryText }]}>
-            • {project}
-          </Text>
-        ))}
-      </View>
+      <Text style={[styles.providerPrice, { color: theme.accentText }]}>
+        ${provider.pricePerTon}/ton CO₂
+      </Text>
       
-      {isSelected && (
-        <View style={[styles.selectedIndicator, { backgroundColor: theme.accentText }]}>
-          <Text style={[styles.selectedText, { color: theme.buttonText }]}>
-            ✓ Selected
-          </Text>
-        </View>
-      )}
+      <Text style={[styles.providerProjects, { color: theme.secondaryText }]}>
+        Projects: {provider.projects.join(', ')}
+      </Text>
     </TouchableOpacity>
   );
 
-  const OffsetHistoryCard = ({ offset }) => (
-    <View style={[styles.historyCard, {
-      backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-      borderColor: theme.border,
-    }]}>
-      <View style={styles.historyHeader}>
-        <Text style={[styles.historyProvider, { color: theme.primaryText }]}>
-          {OFFSET_PROVIDERS[offset.provider]?.name || 'Unknown Provider'}
-        </Text>
-        <Text style={[styles.historyAmount, { color: theme.accentText }]}>
-          {parseFloat(offset.tons_co2).toFixed(1)} tons CO₂
-        </Text>
-      </View>
-      
-      <View style={styles.historyDetails}>
-        <Text style={[styles.historyPrice, { color: theme.secondaryText }]}>
-          ${parseFloat(offset.total_price).toFixed(2)} • {new Date(offset.purchased_at).toLocaleDateString()}
-        </Text>
-        <Text style={[styles.certificateId, { color: theme.secondaryText }]}>
-          Certificate: {offset.certificate_id}
-        </Text>
-      </View>
-    </View>
-  );
-
-  const calculatePrice = () => {
-    const tons = parseFloat(offsetAmount) || 0;
-    const provider = OFFSET_PROVIDERS[selectedProvider];
-    return provider ? (tons * provider.pricePerTon).toFixed(2) : '0.00';
-  };
-
-  const getNetEmissions = () => {
-    const monthlyEmissions = userEmissions || 0;
-    const yearlyProjected = monthlyEmissions * 12;
-    const netEmissions = Math.max(0, yearlyProjected - (totalOffset * 1000)); // Convert tons to kg
-    return {
-      yearly: yearlyProjected,
-      offset: totalOffset * 1000,
-      net: netEmissions,
-    };
-  };
-
+  // Show bank connection prompt if not connected
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+      <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.accentText} />
-        <Text style={[styles.loadingText, { color: theme.primaryText }]}>Loading...</Text>
       </View>
     );
   }
 
-  const emissions = getNetEmissions();
+  if (!hasBankConnection) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.emptyStateContainer}>
+            <View style={[styles.iconCircle, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5' }]}>
+              <Ionicons name="leaf-outline" size={60} color={theme.accentText} />
+            </View>
+            
+            <Text style={[styles.emptyTitle, { color: theme.primaryText }]}>
+              Connect Your Bank
+            </Text>
+            
+            <Text style={[styles.emptyDescription, { color: theme.secondaryText }]}>
+              Link your bank account to automatically track carbon emissions from your transactions. 
+              This helps us calculate accurate carbon offsets for your lifestyle.
+            </Text>
+
+            <View style={styles.benefitsList}>
+              <View style={styles.benefitItem}>
+                <Ionicons name="checkmark-circle" size={24} color={theme.accentText} />
+                <Text style={[styles.benefitText, { color: theme.secondaryText }]}>
+                  Automatic carbon tracking
+                </Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="checkmark-circle" size={24} color={theme.accentText} />
+                <Text style={[styles.benefitText, { color: theme.secondaryText }]}>
+                  Personalized offset recommendations
+                </Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="checkmark-circle" size={24} color={theme.accentText} />
+                <Text style={[styles.benefitText, { color: theme.secondaryText }]}>
+                  Detailed emissions breakdown
+                </Text>
+              </View>
+            </View>
+
+            <PlaidLinkButton 
+              onSuccess={handleBankConnected}
+              style={styles.connectButton}
+            />
+
+            <TouchableOpacity 
+              style={styles.skipButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={[styles.skipButtonText, { color: theme.secondaryText }]}>
+                I'll do this later
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.primaryText }]}>
-            🌍 Carbon Offsets
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
-            Invest in high-quality projects to offset your carbon footprint
-          </Text>
-        </View>
-
-        {/* Impact Summary */}
-        <View style={[styles.impactCard, {
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Emissions Summary */}
+        <View style={[styles.summaryCard, {
           backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
           borderColor: theme.accentText,
         }]}>
-          <Text style={[styles.impactTitle, { color: theme.accentText }]}>
+          <Text style={[styles.summaryTitle, { color: theme.accentText }]}>
             Your Carbon Impact
           </Text>
           
-          <View style={styles.impactStats}>
-            <View style={styles.impactStat}>
-              <Text style={[styles.impactValue, { color: theme.primaryText }]}>
-                {(emissions.yearly / 1000).toFixed(1)}
+          <View style={styles.summaryStats}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.primaryText }]}>
+                {(userEmissions / 1000).toFixed(2)}
               </Text>
-              <Text style={[styles.impactLabel, { color: theme.secondaryText }]}>
-                Yearly Emissions (tons)
-              </Text>
-            </View>
-            
-            <View style={styles.impactStat}>
-              <Text style={[styles.impactValue, { color: theme.accentText }]}>
-                {totalOffset.toFixed(1)}
-              </Text>
-              <Text style={[styles.impactLabel, { color: theme.secondaryText }]}>
-                Total Offset (tons)
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+                Tons Emitted (30 days)
               </Text>
             </View>
             
-            <View style={styles.impactStat}>
-              <Text style={[styles.impactValue, { 
-                color: emissions.net <= 0 ? theme.accentText : '#EF4444' 
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.accentText }]}>
+                {totalOffset.toFixed(2)}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+                Total Offset
+              </Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { 
+                color: (userEmissions / 1000 - totalOffset) <= 0 ? theme.accentText : '#EF4444' 
               }]}>
-                {(emissions.net / 1000).toFixed(1)}
+                {((userEmissions / 1000) - totalOffset).toFixed(2)}
               </Text>
-              <Text style={[styles.impactLabel, { color: theme.secondaryText }]}>
-                Net Emissions (tons)
+              <Text style={[styles.statLabel, { color: theme.secondaryText }]}>
+                Net Emissions
               </Text>
             </View>
           </View>
           
-          {emissions.net <= 0 && (
-            <View style={[styles.carbonNeutralBadge, { backgroundColor: theme.accentText }]}>
-              <Text style={[styles.carbonNeutralText, { color: theme.buttonText }]}>
+          {((userEmissions / 1000) - totalOffset) <= 0 && (
+            <View style={[styles.neutralBadge, { backgroundColor: theme.accentText }]}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.neutralText}>
                 🎉 You're Carbon Neutral!
               </Text>
             </View>
@@ -293,7 +325,6 @@ export default function CarbonOffsetScreen() {
         {/* Purchase Form */}
         <View style={[styles.purchaseCard, {
           backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-          borderColor: theme.border,
         }]}>
           <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
             Purchase Carbon Offsets
@@ -304,92 +335,77 @@ export default function CarbonOffsetScreen() {
               Amount (tons CO₂)
             </Text>
             <TextInput
-              style={[styles.amountInput, {
-                backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.divider,
+              style={[styles.input, {
+                backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F9FAFB',
                 color: theme.primaryText,
                 borderColor: theme.border,
               }]}
               value={offsetAmount}
               onChangeText={setOffsetAmount}
+              keyboardType="numeric"
               placeholder="1.0"
-              keyboardType="decimal-pad"
               placeholderTextColor={theme.secondaryText}
             />
           </View>
-          
-          <Text style={[styles.formLabel, { color: theme.secondaryText }]}>
-            Select Offset Provider
-          </Text>
-        </View>
 
-        {/* Provider Selection */}
-        <View style={styles.providersContainer}>
-          {Object.entries(OFFSET_PROVIDERS).map(([providerId, provider]) => (
+          <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
+            Select Provider
+          </Text>
+
+          {Object.entries(OFFSET_PROVIDERS).map(([key, provider]) => (
             <ProviderCard
-              key={providerId}
-              providerId={providerId}
+              key={key}
+              providerId={key}
               provider={provider}
-              isSelected={selectedProvider === providerId}
+              isSelected={selectedProvider === key}
               onSelect={setSelectedProvider}
             />
           ))}
-        </View>
 
-        {/* Purchase Button */}
-        <View style={[styles.purchaseSummary, {
-          backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
-          borderColor: theme.border,
-        }]}>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>
-              Amount:
-            </Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
-              {offsetAmount} tons CO₂
-            </Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.secondaryText }]}>
-              Provider:
-            </Text>
-            <Text style={[styles.summaryValue, { color: theme.primaryText }]}>
-              {OFFSET_PROVIDERS[selectedProvider]?.name || 'Unknown'}
-            </Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={[styles.totalLabel, { color: theme.primaryText }]}>
-              Total:
-            </Text>
-            <Text style={[styles.totalValue, { color: theme.accentText }]}>
-              ${calculatePrice()}
-            </Text>
-          </View>
-          
           <TouchableOpacity
             style={[styles.purchaseButton, { backgroundColor: theme.accentText }]}
             onPress={purchaseOffset}
           >
-            <Text style={[styles.purchaseButtonText, { color: theme.buttonText }]}>
-              Purchase Offsets
+            <Text style={styles.purchaseButtonText}>
+              Purchase for ${(parseFloat(offsetAmount || 0) * OFFSET_PROVIDERS[selectedProvider].pricePerTon).toFixed(2)}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Offset History */}
         {userOffsets.length > 0 && (
-          <View style={styles.historySection}>
-            <Text style={[styles.sectionTitle, { color: theme.primaryText }]}>
+          <View style={[styles.historyCard, {
+            backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : theme.cardBackground,
+          }]}>
+            <Text style={[styles.cardTitle, { color: theme.primaryText }]}>
               Your Offset History
             </Text>
-            {userOffsets.map((offset, index) => (
-              <OffsetHistoryCard key={offset.id || index} offset={offset} />
+            
+            {userOffsets.map((offset) => (
+              <View
+                key={offset.id}
+                style={[styles.historyItem, { borderColor: theme.border }]}
+              >
+                <View style={styles.historyContent}>
+                  <Text style={[styles.historyProvider, { color: theme.primaryText }]}>
+                    {OFFSET_PROVIDERS[offset.provider]?.name || offset.provider}
+                  </Text>
+                  <Text style={[styles.historyDate, { color: theme.secondaryText }]}>
+                    {new Date(offset.purchased_at).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={styles.historyAmounts}>
+                  <Text style={[styles.historyTons, { color: theme.accentText }]}>
+                    {offset.tons_co2} tons CO₂
+                  </Text>
+                  <Text style={[styles.historyPrice, { color: theme.secondaryText }]}>
+                    ${offset.total_price}
+                  </Text>
+                </View>
+              </View>
             ))}
           </View>
         )}
-
-        <View style={styles.bottomSpacing} />
       </ScrollView>
     </View>
   );
@@ -399,266 +415,210 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  loadingContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-  },
-  scrollContainer: {
+  scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
+    padding: 20,
   },
-  header: {
-    marginBottom: 20,
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
   },
-  title: {
+  iconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  subtitle: {
+  emptyDescription: {
     fontSize: 16,
-    lineHeight: 22,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+    paddingHorizontal: 20,
   },
-
-  // Impact Card
-  impactCard: {
-    borderRadius: 16,
+  benefitsList: {
+    width: '100%',
+    marginBottom: 32,
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  benefitText: {
+    fontSize: 16,
+    marginLeft: 12,
+    flex: 1,
+  },
+  connectButton: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  skipButton: {
+    padding: 12,
+  },
+  skipButtonText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  summaryCard: {
     padding: 20,
+    borderRadius: 16,
     marginBottom: 20,
     borderWidth: 2,
   },
-  impactTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
+  summaryTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
     textAlign: 'center',
   },
-  impactStats: {
+  summaryStats: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 15,
+    justifyContent: 'space-around',
+    marginBottom: 16,
   },
-  impactStat: {
+  statItem: {
     alignItems: 'center',
-    flex: 1,
   },
-  impactValue: {
+  statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: 4,
   },
-  impactLabel: {
+  statLabel: {
     fontSize: 12,
     textAlign: 'center',
   },
-  carbonNeutralBadge: {
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignSelf: 'center',
+  neutralBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
   },
-  carbonNeutralText: {
-    fontSize: 14,
-    fontWeight: '600',
+  neutralText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
   },
-
-  // Purchase Card
   purchaseCard: {
-    borderRadius: 16,
     padding: 20,
+    borderRadius: 16,
     marginBottom: 20,
-    borderWidth: 1,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
   },
   formGroup: {
-    marginBottom: 15,
+    marginBottom: 20,
   },
   formLabel: {
     fontSize: 14,
-    fontWeight: '500',
     marginBottom: 8,
+    fontWeight: '600',
   },
-  amountInput: {
-    borderRadius: 12,
-    padding: 15,
-    fontSize: 16,
+  input: {
+    height: 50,
     borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
   },
-
-  // Provider Cards
-  providersContainer: {
-    marginBottom: 20,
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   providerCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
   },
   providerHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
-  },
-  providerLogo: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
-    marginRight: 15,
-    backgroundColor: '#F3F4F6',
-  },
-  providerInfo: {
-    flex: 1,
+    marginBottom: 8,
   },
   providerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  providerPrice: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  rating: {
-    flexDirection: 'row',
-  },
-  star: {
-    fontSize: 16,
-  },
-  projectsList: {
-    marginBottom: 10,
-  },
-  projectsTitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 5,
-  },
-  projectItem: {
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  selectedIndicator: {
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignSelf: 'flex-start',
-  },
-  selectedText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // Purchase Summary
-  purchaseSummary: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  summaryLabel: {
-    fontSize: 14,
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  totalValue: {
     fontSize: 18,
     fontWeight: 'bold',
   },
+  ratingContainer: {
+    flexDirection: 'row',
+  },
+  providerPrice: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  providerProjects: {
+    fontSize: 14,
+  },
   purchaseButton: {
+    padding: 16,
     borderRadius: 12,
-    padding: 15,
     alignItems: 'center',
-    marginTop: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    marginTop: 12,
   },
   purchaseButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  // History Section
-  historySection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 15,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   historyCard: {
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
   },
-  historyHeader: {
+  historyItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  historyContent: {
+    flex: 1,
   },
   historyProvider: {
     fontSize: 16,
-    fontWeight: '500',
-  },
-  historyAmount: {
-    fontSize: 14,
     fontWeight: '600',
+    marginBottom: 4,
   },
-  historyDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  historyDate: {
+    fontSize: 14,
+  },
+  historyAmounts: {
+    alignItems: 'flex-end',
+  },
+  historyTons: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
   },
   historyPrice: {
-    fontSize: 12,
-  },
-  certificateId: {
-    fontSize: 12,
-    fontStyle: 'italic',
-  },
-
-  bottomSpacing: {
-    height: 50,
+    fontSize: 14,
   },
 });
