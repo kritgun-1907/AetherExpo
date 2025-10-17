@@ -39,7 +39,7 @@ const FloatingAethyChatModal = () => {
   const modalSlide = useRef(new Animated.Value(height)).current;
   const notificationPulse = useRef(new Animated.Value(1)).current;
   
-  // 🔥 NEW: Position state for draggable button
+  // 🔥 Position state for draggable button
   const pan = useRef(new Animated.ValueXY({ 
     x: width - 80, // 20px from right edge
     y: height - 180 // Above the bottom nav (usually 60-80px height + spacing)
@@ -47,11 +47,14 @@ const FloatingAethyChatModal = () => {
   
   const [isDragging, setIsDragging] = useState(false);
 
-  // 🔥 NEW: PanResponder for drag functionality
+  // 🔥 FIXED: PanResponder with better tap/drag detection
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only start moving if dragged more than 5 pixels
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
       onPanResponderGrant: () => {
         setIsDragging(true);
         pan.setOffset({
@@ -66,6 +69,9 @@ const FloatingAethyChatModal = () => {
       ),
       onPanResponderRelease: (e, gesture) => {
         pan.flattenOffset();
+        
+        // Calculate drag distance
+        const dragDistance = Math.sqrt(gesture.dx ** 2 + gesture.dy ** 2);
         
         // Snap to edges with safe zones
         const BUTTON_SIZE = 60;
@@ -99,13 +105,15 @@ const FloatingAethyChatModal = () => {
           friction: 8,
         }).start();
         
-        // Only open chat if it wasn't dragged much (tap gesture)
-        const dragDistance = Math.sqrt(gesture.dx ** 2 + gesture.dy ** 2);
+        // Only open chat if it was a tap (not dragged)
         if (dragDistance < 10) {
-          setTimeout(() => openChat(), 100);
+          setTimeout(() => {
+            setIsDragging(false);
+            openChat();
+          }, 50);
+        } else {
+          setTimeout(() => setIsDragging(false), 100);
         }
-        
-        setTimeout(() => setIsDragging(false), 100);
       },
     })
   ).current;
@@ -140,7 +148,6 @@ const FloatingAethyChatModal = () => {
   }, [messages, isOpen]);
 
   const openChat = () => {
-    if (isDragging) return; // 🔥 Prevent opening while dragging
     setIsOpen(true);
     setShowNotification(false);
     Animated.spring(modalSlide, {
@@ -267,7 +274,7 @@ const FloatingAethyChatModal = () => {
 
   return (
     <>
-      {/* 🔥 UPDATED: Draggable Floating Button */}
+      {/* 🔥 FIXED: Draggable Floating Button with tap detection */}
       {!isOpen && (
         <Animated.View
           style={[
@@ -276,37 +283,41 @@ const FloatingAethyChatModal = () => {
               transform: [
                 { translateX: pan.x },
                 { translateY: pan.y },
-                { scale: buttonScale }
               ],
             },
           ]}
           {...panResponder.panHandlers}
         >
-          {showNotification && (
-            <Animated.View
-              style={[
-                styles.notificationBadge,
-                { transform: [{ scale: notificationPulse }] },
-              ]}
-            >
-              <Text style={styles.notificationText}>1</Text>
-            </Animated.View>
-          )}
-          
-          <TouchableOpacity
-            style={styles.chatButton}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
+          <Animated.View
+            style={{
+              transform: [{ scale: buttonScale }],
+            }}
           >
-            <Icon name="chat" size={28} color="#FFFFFF" />
-          </TouchableOpacity>
-          {/* 🔥 NEW: Drag indicator dots */}
-          <View style={styles.dragIndicator}>
-            <View style={styles.dragDot} />
-            <View style={styles.dragDot} />
-            <View style={styles.dragDot} />
-          </View>
+            {showNotification && (
+              <Animated.View
+                style={[
+                  styles.notificationBadge,
+                  { transform: [{ scale: notificationPulse }] },
+                ]}
+              >
+                <Text style={styles.notificationText}>1</Text>
+              </Animated.View>
+            )}
+            
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={openChat}
+              activeOpacity={0.9}
+            >
+              <Icon name="chat" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+            {/* 🔥 Drag indicator dots */}
+            <View style={styles.dragIndicator}>
+              <View style={styles.dragDot} />
+              <View style={styles.dragDot} />
+              <View style={styles.dragDot} />
+            </View>
+          </Animated.View>
         </Animated.View>
       )}
 
@@ -426,7 +437,7 @@ const FloatingAethyChatModal = () => {
 };
 
 const styles = StyleSheet.create({
-  // 🔥 UPDATED: Floating Button Styles
+  // Floating Button Styles
   floatingButton: {
     position: 'absolute',
     width: 60,
@@ -446,7 +457,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 10,
   },
-  // 🔥 NEW: Drag indicator styles
+  // Drag indicator styles
   dragIndicator: {
     position: 'absolute',
     bottom: 5,
