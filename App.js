@@ -1,4 +1,4 @@
-// App.js - FIXED VERSION with proper auth navigation
+// App.js - WITH FLOATING CHAT (Shows on all screens except onboarding)
 import 'react-native-gesture-handler';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -9,6 +9,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
+
+// ✅ ADD THIS IMPORT - Floating Chat Component
+import FloatingAethyChatModal from './src/components/chat/FloatingAethyChatModal';
 
 // Theme Provider
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -243,7 +246,7 @@ function AppContent() {
     };
   }, [isLoggedIn]);
 
-  // Set up auth state listener - THIS IS THE KEY FIX
+  // Set up auth state listener
   useEffect(() => {
     console.log('🎧 Setting up auth state listener...');
     
@@ -264,7 +267,6 @@ function AppContent() {
           console.log('🔄 Token refreshed');
           setIsLoggedIn(true);
         } else if (session) {
-          // Handle other events with active session
           console.log('📝 Session update:', event);
           setIsLoggedIn(true);
         } else {
@@ -274,7 +276,6 @@ function AppContent() {
       }
     );
 
-    // Cleanup subscription on unmount
     return () => {
       console.log('🧹 Cleaning up auth listener');
       subscription.unsubscribe();
@@ -302,16 +303,17 @@ function AppContent() {
     <NavigationContainer linking={linking} fallback={<Text>Loading...</Text>}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isFirstLaunch ? (
-          // Show onboarding for first-time users
           <Stack.Screen name="Onboarding" component={OnboardingStackNavigator} />
         ) : isLoggedIn ? (
-          // Show main app for logged-in users
           <Stack.Screen name="Main" component={MainStackNavigator} />
         ) : (
-          // Show auth for non-logged-in returning users
           <Stack.Screen name="Auth" component={AuthStackNavigator} />
         )}
       </Stack.Navigator>
+      
+      {/* 🌿 FLOATING CHAT - Shows on ALL screens EXCEPT onboarding */}
+      {!isFirstLaunch && <FloatingAethyChatModal />}
+      
     </NavigationContainer>
   );
 }
