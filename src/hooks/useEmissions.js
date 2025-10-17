@@ -120,54 +120,54 @@ export const useEmissions = () => {
     }
   }, []);
 
-  // 🔥 FIX: Extract emissions values from objects
-  const updateEmissionsFromSync = (stats) => {
-    if (!stats || !mountedRef.current) return;
+ // 🔥 FIX: Extract both emissions AND day names from weekly data
+const updateEmissionsFromSync = (stats) => {
+  if (!stats || !mountedRef.current) return;
 
-    console.log('📈 Updating emissions from sync:', stats);
+  console.log('📈 Updating emissions from sync:', stats);
 
-    // Extract weekly data array
-    let weeklyDataArray = stats.weekly_data || stats.weeklyData || [];
-    
-    // 🔥 FIX: Handle both formats - array of objects OR array of numbers
-    let normalizedWeeklyData;
-    
-    if (Array.isArray(weeklyDataArray) && weeklyDataArray.length > 0) {
-      // Check if first element is an object with 'emissions' property
-      if (typeof weeklyDataArray[0] === 'object' && weeklyDataArray[0].emissions !== undefined) {
-        // Extract emissions values from objects: [{day: "Mon", emissions: 5}] -> [5, ...]
-        normalizedWeeklyData = weeklyDataArray
-          .slice(0, 7)
-          .map(item => typeof item.emissions === 'number' ? item.emissions : 0);
-      } else {
-        // Already an array of numbers
-        normalizedWeeklyData = weeklyDataArray.slice(0, 7);
-      }
+  let weeklyDataArray = stats.weekly_data || stats.weeklyData || [];
+  let normalizedWeeklyData = [];
+  let normalizedDayNames = [];
+  
+  if (Array.isArray(weeklyDataArray) && weeklyDataArray.length > 0) {
+    if (typeof weeklyDataArray[0] === 'object') {
+      // Extract emissions AND day names from objects
+      normalizedWeeklyData = weeklyDataArray
+        .slice(0, 7)
+        .map(item => typeof item.emissions === 'number' ? item.emissions : 0);
+      
+      normalizedDayNames = weeklyDataArray
+        .slice(0, 7)
+        .map(item => item.day || item.day_name || 'Day');
     } else {
-      normalizedWeeklyData = [];
+      normalizedWeeklyData = weeklyDataArray.slice(0, 7);
+      // Fallback to default names if just numbers
+      normalizedDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     }
-    
-    // Ensure exactly 7 elements (pad with zeros if needed)
-    while (normalizedWeeklyData.length < 7) {
-      normalizedWeeklyData.push(0);
-    }
+  }
+  
+  // Ensure exactly 7 elements
+  while (normalizedWeeklyData.length < 7) {
+    normalizedWeeklyData.push(0);
+    normalizedDayNames.push('Day');
+  }
 
-    // Update emissions state
-    setEmissions(prev => ({
-      ...prev,
-      daily: typeof stats.daily === 'number' ? stats.daily : 0,
-      weekly: typeof stats.weekly === 'number' ? stats.weekly : 0,
-      monthly: typeof stats.monthly === 'number' ? stats.monthly : 0,
-      allTime: typeof (stats.all_time || stats.allTime) === 'number' ? (stats.all_time || stats.allTime) : 0,
-      weeklyData: normalizedWeeklyData,
-      dayNames: prev.dayNames,
-    }));
+  setEmissions(prev => ({
+    ...prev,
+    daily: typeof stats.daily === 'number' ? stats.daily : 0,
+    weekly: typeof stats.weekly === 'number' ? stats.weekly : 0,
+    monthly: typeof stats.monthly === 'number' ? stats.monthly : 0,
+    allTime: typeof (stats.all_time || stats.allTime) === 'number' ? 
+      (stats.all_time || stats.allTime) : 0,
+    weeklyData: normalizedWeeklyData,
+    dayNames: normalizedDayNames, // ✅ NOW USING ACTUAL DAY NAMES FROM DATA
+  }));
 
-    // Update profile if included in stats
-    if (stats.profile) {
-      setProfile(stats.profile);
-    }
-  };
+  if (stats.profile) {
+    setProfile(stats.profile);
+  }
+};
 
   // Manual refresh function
   const refreshEmissions = useCallback(async () => {

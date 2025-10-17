@@ -316,10 +316,10 @@ class EmissionSyncService {
       const all_time = emissions
         .reduce((sum, e) => sum + e.amount, 0);
 
-      // 🔥 FIX: Calculate weekly breakdown for last 7 days
+     // 🔥 FIX: Calculate weekly breakdown for last 7 days with proper day names
       const weeklyDataArray = [];
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      
+
       for (let i = 6; i >= 0; i--) {
         const date = new Date(now);
         date.setDate(date.getDate() - i);
@@ -330,7 +330,7 @@ class EmissionSyncService {
           .reduce((sum, e) => sum + e.amount, 0);
         
         weeklyDataArray.push({
-          day: dayNames[date.getDay()],
+          day: dayNames[date.getDay()], // This correctly maps 0=Sun, 1=Mon, etc.
           emissions: dayEmissions
         });
       }
