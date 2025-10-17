@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  PanResponder,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
@@ -37,6 +38,77 @@ const FloatingAethyChatModal = () => {
   const buttonScale = useRef(new Animated.Value(1)).current;
   const modalSlide = useRef(new Animated.Value(height)).current;
   const notificationPulse = useRef(new Animated.Value(1)).current;
+  
+  // 🔥 NEW: Position state for draggable button
+  const pan = useRef(new Animated.ValueXY({ 
+    x: width - 80, // 20px from right edge
+    y: height - 180 // Above the bottom nav (usually 60-80px height + spacing)
+  })).current;
+  
+  const [isDragging, setIsDragging] = useState(false);
+
+  // 🔥 NEW: PanResponder for drag functionality
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsDragging(true);
+        pan.setOffset({
+          x: pan.x._value,
+          y: pan.y._value,
+        });
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: (e, gesture) => {
+        pan.flattenOffset();
+        
+        // Snap to edges with safe zones
+        const BUTTON_SIZE = 60;
+        const MARGIN = 20;
+        const BOTTOM_NAV_HEIGHT = 80; // Height of bottom navigation
+        const TOP_MARGIN = 60; // Status bar + some padding
+        
+        let finalX = pan.x._value;
+        let finalY = pan.y._value;
+        
+        // Constrain to screen bounds
+        const minX = MARGIN;
+        const maxX = width - BUTTON_SIZE - MARGIN;
+        const minY = TOP_MARGIN;
+        const maxY = height - BUTTON_SIZE - BOTTOM_NAV_HEIGHT - MARGIN;
+        
+        // Snap to nearest edge (left or right)
+        if (finalX < width / 2) {
+          finalX = minX; // Snap to left
+        } else {
+          finalX = maxX; // Snap to right
+        }
+        
+        // Ensure Y is within bounds
+        finalY = Math.max(minY, Math.min(finalY, maxY));
+        
+        Animated.spring(pan, {
+          toValue: { x: finalX, y: finalY },
+          useNativeDriver: false,
+          tension: 50,
+          friction: 8,
+        }).start();
+        
+        // Only open chat if it wasn't dragged much (tap gesture)
+        const dragDistance = Math.sqrt(gesture.dx ** 2 + gesture.dy ** 2);
+        if (dragDistance < 10) {
+          setTimeout(() => openChat(), 100);
+        }
+        
+        setTimeout(() => setIsDragging(false), 100);
+      },
+    })
+  ).current;
 
   // Pulse animation for notification
   useEffect(() => {
@@ -68,6 +140,7 @@ const FloatingAethyChatModal = () => {
   }, [messages, isOpen]);
 
   const openChat = () => {
+    if (isDragging) return; // 🔥 Prevent opening while dragging
     setIsOpen(true);
     setShowNotification(false);
     Animated.spring(modalSlide, {
@@ -194,13 +267,20 @@ const FloatingAethyChatModal = () => {
 
   return (
     <>
-      {/* Floating Button */}
+      {/* 🔥 UPDATED: Draggable Floating Button */}
       {!isOpen && (
         <Animated.View
           style={[
             styles.floatingButton,
-            { transform: [{ scale: buttonScale }] },
+            {
+              transform: [
+                { translateX: pan.x },
+                { translateY: pan.y },
+                { scale: buttonScale }
+              ],
+            },
           ]}
+          {...panResponder.panHandlers}
         >
           {showNotification && (
             <Animated.View
@@ -215,13 +295,18 @@ const FloatingAethyChatModal = () => {
           
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={openChat}
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
             activeOpacity={0.9}
           >
             <Icon name="chat" size={28} color="#FFFFFF" />
           </TouchableOpacity>
+          {/* 🔥 NEW: Drag indicator dots */}
+          <View style={styles.dragIndicator}>
+            <View style={styles.dragDot} />
+            <View style={styles.dragDot} />
+            <View style={styles.dragDot} />
+          </View>
         </Animated.View>
       )}
 
@@ -341,11 +426,11 @@ const FloatingAethyChatModal = () => {
 };
 
 const styles = StyleSheet.create({
-  // Floating Button Styles
+  // 🔥 UPDATED: Floating Button Styles
   floatingButton: {
     position: 'absolute',
-    bottom: 20,
-    right: 20,
+    width: 60,
+    height: 60,
     zIndex: 9999,
   },
   chatButton: {
@@ -360,6 +445,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 10,
+  },
+  // 🔥 NEW: Drag indicator styles
+  dragIndicator: {
+    position: 'absolute',
+    bottom: 5,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  dragDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
   },
   notificationBadge: {
     position: 'absolute',
