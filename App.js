@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, Alert } from 'react-native'; // ADD Alert here
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -281,6 +281,97 @@ function AppContent() {
       subscription.unsubscribe();
     };
   }, []);
+
+ // ✅ CORRECTED - Handle deep links for email confirmation
+useEffect(() => {
+  console.log('🔗 Setting up deep link listener...');
+  
+  // Handle deep links
+  const handleDeepLink = async (event) => {
+    const url = event.url;
+    console.log('📧 Deep link received:', url);
+    
+    if (url) {
+      try {
+        // Parse the URL to extract token information
+        const parsedUrl = new URL(url);
+        const token = parsedUrl.searchParams.get('token');
+        const type = parsedUrl.searchParams.get('type');
+        
+        console.log('Token type:', type);
+        
+        if (token && type === 'signup') {
+          // Verify the email token
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: token,
+            type: 'signup'
+          });
+          
+          if (error) {
+            console.error('❌ Error verifying email:', error);
+            Alert.alert('Error', 'Failed to confirm email. Please try again.');
+            return;
+          }
+          
+          if (data.session) {
+            console.log('✅ Email confirmed successfully!');
+            Alert.alert(
+              'Success! 🎉', 
+              'Your email has been confirmed! Welcome to Aether!',
+              [{ text: 'OK' }]
+            );
+            setIsLoggedIn(true);
+          }
+        } else if (token && type === 'recovery') {
+          // Handle password recovery
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: token,
+            type: 'recovery'
+          });
+          
+          if (error) {
+            console.error('❌ Error with recovery:', error);
+            Alert.alert('Error', 'Failed to verify recovery link.');
+            return;
+          }
+          
+          if (data.session) {
+            console.log('✅ Recovery verified');
+            Alert.alert('Success', 'You can now reset your password.');
+            setIsLoggedIn(true);
+          }
+        } else {
+          // For other auth flows, just check if there's a valid session
+          const { data: { session }, error } = await supabase.auth.getSession();
+          
+          if (session) {
+            console.log('✅ Valid session found from deep link');
+            setIsLoggedIn(true);
+          }
+        }
+      } catch (error) {
+        console.error('💥 Deep link error:', error);
+        Alert.alert('Error', 'Something went wrong processing the link.');
+      }
+    }
+  };
+
+  // Listen for deep links while app is open
+  const subscription = Linking.addEventListener('url', handleDeepLink);
+  
+  // Check if app was opened from a deep link
+  Linking.getInitialURL().then((url) => {
+    if (url) {
+      console.log('🚀 App opened with URL:', url);
+      handleDeepLink({ url });
+    }
+  });
+
+  return () => {
+    console.log('🧹 Cleaning up deep link listener');
+    subscription.remove();
+  };
+}, []);
 
   // Show loading screen while initializing
   if (!isLoadingComplete || isLoading) {
