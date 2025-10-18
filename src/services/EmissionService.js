@@ -111,7 +111,7 @@ class EmissionService {
       transport: {
         // General car/vehicle (VERIFIED)
         car: {
-          activity_id: 'passenger_vehicle-vehicle_type_motor_vehicle_bodies_and_special_purpose_motor_vehicles-fuel_source_na-engine_size_na-vehicle_age_na-vehicle_weight_na',
+          activity_id: "passenger_vehicle-vehicle_type_car-fuel_source_na-engine_size_na-vehicle_age_na-vehicle_weight_na",
           parameter_type: 'distance',
           unit: 'km'
         },

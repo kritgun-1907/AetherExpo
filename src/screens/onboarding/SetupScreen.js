@@ -227,43 +227,57 @@ export default function SetupScreen({ navigation }) {
     }
   };
 
-  const handleComplete = async () => {
-    setLoading(true);
+const handleComplete = async () => {
+  setLoading(true);
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
     
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        await supabase
-          .from('user_profiles')
-          .update({
-            full_name: userData.fullName,
-            weekly_goal: parseInt(userData.weeklyGoal),
-            preferences: {
-              transport_mode: userData.transportMode,
-              diet_type: userData.dietType,
-              household_size: parseInt(userData.householdSize),
-            },
-            onboarding_completed: true,
-          })
-          .eq('id', user.id);
-      }
-      
-      await AsyncStorage.setItem('setupComplete', 'true');
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      
-      Alert.alert(
-        'Setup Complete!',
-        "You're all set to start tracking your carbon footprint!",
-        [{ text: 'Let\'s Go!', onPress: () => navigation.navigate('Login') }]
-      );
-    } catch (error) {
-      console.error('Setup error:', error);
-      Alert.alert('Error', 'Failed to save your preferences. Please try again.');
-    } finally {
-      setLoading(false);
+    if (user) {
+      await supabase
+        .from('user_profiles')
+        .update({
+          full_name: userData.fullName,
+          weekly_goal: parseInt(userData.weeklyGoal),
+          preferences: {
+            transport_mode: userData.transportMode,
+            diet_type: userData.dietType,
+            household_size: parseInt(userData.householdSize),
+          },
+          onboarding_completed: true,
+        })
+        .eq('id', user.id);
     }
-  };
+    
+    // ✅ Mark onboarding as complete
+    await AsyncStorage.setItem('setupComplete', 'true');
+    await AsyncStorage.setItem('onboardingComplete', 'true');
+    await AsyncStorage.setItem('userData', JSON.stringify(userData));
+    
+    setLoading(false);
+    
+    // ✅ NEW FIX: Use navigation.reset to go back to root
+    Alert.alert(
+      'Setup Complete! 🎉',
+      "You're all set to start tracking your carbon footprint!",
+      [{ 
+        text: 'Continue', 
+        onPress: () => {
+          // Force reload the app navigation state
+          navigation.getParent()?.reset({
+            index: 0,
+            routes: [{ name: 'Auth' }],
+          });
+        }
+      }]
+    );
+    
+  } catch (error) {
+    console.error('Setup error:', error);
+    Alert.alert('Error', 'Failed to save your preferences. Please try again.');
+    setLoading(false);
+  }
+};
 
   return (
     <View style={styles.container}>

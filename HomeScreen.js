@@ -395,9 +395,6 @@ const submitEmission = async () => {
       throw new Error('User not authenticated');
     }
 
-    console.log('🚀 Calculating emissions...');
-    
-    // 🔥 USE EmissionSyncService directly
     const result = await EmissionSyncService.addEmission(
       selectedCategory,
       activityType,
@@ -410,6 +407,23 @@ const submitEmission = async () => {
 
     if (result.success) {
       const pointsAwarded = Math.floor(result.emission.amount * 2);
+      
+      // ✅ UPDATE TOKENS IN DATABASE
+      const { data: currentProfile } = await supabase
+        .from('user_profiles')
+        .select('eco_points')
+        .eq('id', user.id)
+        .single();
+      
+      const newTokens = (currentProfile?.eco_points || 0) + pointsAwarded;
+      
+      await supabase
+        .from('user_profiles')
+        .update({ eco_points: newTokens })
+        .eq('id', user.id);
+      
+      // ✅ UPDATE LOCAL STATE IMMEDIATELY
+      setTokens(newTokens);
       
       Alert.alert(
         'Success! 🎉', 

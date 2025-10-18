@@ -1,6 +1,8 @@
 // src/store/carbonStore.js - FIXED VERSION
+// src/store/carbonStore.js - FIXED VERSION
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../api/supabase'; // ✅ ADD THIS IMPORT
 
 // Create the store with proper error handling
 export const useCarbonStore = create((set, get) => ({
@@ -50,17 +52,34 @@ export const useCarbonStore = create((set, get) => ({
     }
   },
   
-  earnTokens: (amount) => {
-    try {
-      set(state => ({
-        tokens: state.tokens + amount,
-        error: null
-      }));
-    } catch (error) {
-      console.error('Earn tokens failed:', error);
-      set({ error: 'Failed to earn tokens' });
+ earnTokens: async (amount) => {
+  try {
+    set(state => ({
+      tokens: state.tokens + amount,
+      error: null
+    }));
+    
+    // ✅ ALSO UPDATE DATABASE
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ 
+          eco_points: get().tokens // Use the new token value
+        })
+        .eq('id', user.id);
+      
+      if (error) {
+        console.error('Failed to update tokens in database:', error);
+      } else {
+        console.log('✅ Tokens updated in database:', get().tokens);
+      }
     }
-  },
+  } catch (error) {
+    console.error('Earn tokens failed:', error);
+    set({ error: 'Failed to earn tokens' });
+  }
+},
   
   updateStreak: () => {
     try {

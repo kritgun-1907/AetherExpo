@@ -95,7 +95,7 @@ export default function ChallengesScreen() {
   const [activeTab, setActiveTab] = useState('all');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // ✅ Added here
   
   // Custom challenge modal state
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -112,6 +112,23 @@ export default function ChallengesScreen() {
   const availableEmojis = ['🎯', '🌟', '💪', '🔥', '⚡', '🌱', '♻️', '🚴', '🌍', '💚'];
   const unitOptions = ['days', 'kg CO₂', 'km', 'items', 'meals'];
 
+  // ✅ SINGLE onRefresh function
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadChallengesFromBackend(),
+        currentUser ? loadUserChallenges(currentUser.id) : Promise.resolve(),
+        currentUser ? loadCustomChallenges() : Promise.resolve()
+      ]);
+    } catch (error) {
+      console.error('Error refreshing:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ✅ Initialize screen on mount
   useEffect(() => {
     initializeScreen();
   }, []);
@@ -125,21 +142,6 @@ export default function ChallengesScreen() {
       console.error('Error initializing screen:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadChallengesFromBackend();
-      if (currentUser) {
-        await loadUserChallenges(currentUser.id);
-        await loadCustomChallenges();
-      }
-    } catch (error) {
-      console.error('Error refreshing:', error);
-    } finally {
-      setRefreshing(false);
     }
   };
 
@@ -209,18 +211,20 @@ export default function ChallengesScreen() {
         .from('challenges')
         .select('*')
         .eq('is_active', true)
-        .is('created_by', null) // Only load system challenges
+        .is('created_by', null) // ✅ Only load system challenges, not custom ones
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.log('Backend challenges not available, using fallback data:', error.message);
+        console.log('Backend challenges not available, using fallback data');
         setChallenges(getFallbackChallenges());
       } else if (backendChallenges && backendChallenges.length > 0) {
-        console.log('Loaded challenges from backend:', backendChallenges.length);
-        setChallenges(backendChallenges);
+        // ✅ Remove duplicates by ID
+        const uniqueChallenges = backendChallenges.filter((challenge, index, self) =>
+          index === self.findIndex((c) => c.id === challenge.id)
+        );
+        setChallenges(uniqueChallenges);
       } else {
         console.log('No challenges in backend, using fallback data');
-        await insertFallbackChallenges();
         setChallenges(getFallbackChallenges());
       }
     } catch (error) {
@@ -312,43 +316,51 @@ export default function ChallengesScreen() {
     }
   };
 
-  const deleteCustomChallenge = async (challengeId) => {
-    Alert.alert(
-      'Delete Challenge',
-      'Are you sure you want to delete this custom challenge?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('challenges')
-                .delete()
-                .eq('id', challengeId);
-
-              if (error) {
-                const updated = customChallenges.filter(c => c.id !== challengeId);
-                setCustomChallenges(updated);
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                  await AsyncStorage.setItem(`custom_challenges_${user.id}`, JSON.stringify(updated));
-                }
-              } else {
-                await loadCustomChallenges();
+ const deleteCustomChallenge = async (challengeId) => {
+  Alert.alert(
+    'Delete Challenge',
+    'Are you sure you want to delete this custom challenge?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          console.log('🗑️ Deleting challenge:', challengeId);
+          
+          // ✅ Update UI immediately using functional setState
+          setCustomChallenges(prevChallenges => {
+            const updated = prevChallenges.filter(c => c.id !== challengeId);
+            
+            // Also update AsyncStorage
+            (async () => {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                await AsyncStorage.setItem(`custom_challenges_${user.id}`, JSON.stringify(updated));
               }
-              
-              Alert.alert('Deleted', 'Challenge removed successfully');
-            } catch (error) {
-              console.error('Error deleting challenge:', error);
-              Alert.alert('Error', 'Failed to delete challenge');
-            }
+            })();
+            
+            return updated;
+          });
+          
+          // Delete from database in background
+          try {
+            await supabase
+              .from('challenges')
+              .delete()
+              .eq('id', challengeId);
+            console.log('✅ Deleted from database');
+          } catch (error) {
+            console.error('Database delete error:', error);
           }
+          
+          // Show success
+          Alert.alert('Deleted ✅', 'Challenge removed successfully');
         }
-      ]
-    );
-  };
+      }
+    ]
+  );
+};
 
   const getFallbackChallenges = () => [
     { 
@@ -579,6 +591,7 @@ export default function ChallengesScreen() {
             refreshing={refreshing} 
             onRefresh={onRefresh}
             tintColor={theme.accentText}
+            colors={[theme.accentText]}
           />
         }
       >

@@ -18,6 +18,8 @@ export default function ChallengeCard({
   onJoin, 
   onShare, 
   onViewDetails,
+  onDelete,  // ✅ Delete handler
+  showDelete, // ✅ Show delete button flag
   isJoined = false 
 }) {
   const { theme, isDarkMode } = useTheme();
@@ -56,9 +58,23 @@ export default function ChallengeCard({
       onPress={onViewDetails}
       activeOpacity={0.8}
     >
+      {/* ✅ DELETE BUTTON - Only shows for custom challenges */}
+      {showDelete && onDelete && (
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={onDelete}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="trash-outline" size={20} color="#EF4444" />
+        </TouchableOpacity>
+      )}
+
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
+        <View style={[
+          styles.headerLeft,
+          showDelete && { marginRight: 40 } // ✅ FIXED: Move inline
+        ]}>
           <Text style={styles.emoji}>{challenge.emoji}</Text>
           <View style={styles.titleContainer}>
             <Text style={[styles.title, { color: theme.primaryText }]}>
@@ -71,12 +87,14 @@ export default function ChallengeCard({
                   {challenge.participantCount || 0}
                 </Text>
               </View>
-              <View style={styles.metaItem}>
-                <Ionicons name="time-outline" size={14} color={theme.secondaryText} />
-                <Text style={[styles.metaText, { color: theme.secondaryText }]}>
-                  {getDaysRemaining()}d left
-                </Text>
-              </View>
+              {challenge.endDate && (
+                <View style={styles.metaItem}>
+                  <Ionicons name="time-outline" size={14} color={theme.secondaryText} />
+                  <Text style={[styles.metaText, { color: theme.secondaryText }]}>
+                    {getDaysRemaining()}d left
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -98,7 +116,7 @@ export default function ChallengeCard({
       </Text>
 
       {/* Progress Bar (if joined) */}
-      {isJoined && (
+      {isJoined && challenge.currentProgress !== undefined && (
         <View style={styles.progressContainer}>
           <View style={styles.progressHeader}>
             <Text style={[styles.progressLabel, { color: theme.secondaryText }]}>
@@ -127,7 +145,7 @@ export default function ChallengeCard({
         <View style={styles.rewardLeft}>
           <Ionicons name="trophy-outline" size={16} color={Colors.accent} />
           <Text style={[styles.rewardText, { color: theme.primaryText }]}>
-            {challenge.rewardTokens} tokens
+            {challenge.rewardTokens || challenge.reward_tokens || 0} tokens
           </Text>
         </View>
         
@@ -158,15 +176,15 @@ export default function ChallengeCard({
       <View style={[
         styles.typeBadge,
         {
-          backgroundColor: challenge.challengeType === 'global' 
+          backgroundColor: challenge.challengeType === 'global' || challenge.challenge_type === 'global'
             ? Colors.primary 
-            : challenge.challengeType === 'group'
+            : (challenge.challengeType === 'group' || challenge.challenge_type === 'group')
             ? Colors.secondary
             : Colors.accent,
         }
       ]}>
         <Text style={styles.typeBadgeText}>
-          {challenge.challengeType.toUpperCase()}
+          {(challenge.challengeType || challenge.challenge_type || 'individual').toUpperCase()}
         </Text>
       </View>
     </TouchableOpacity>
@@ -182,6 +200,17 @@ const styles = StyleSheet.create({
     ...Shadows.medium,
     position: 'relative',
   },
+  // ✅ DELETE BUTTON STYLES
+  deleteButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    zIndex: 100,
+    elevation: 5,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -191,6 +220,7 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     flex: 1,
+    // ✅ REMOVED: marginRight moved to inline style above
   },
   emoji: {
     fontSize: 32,

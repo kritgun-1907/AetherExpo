@@ -115,6 +115,21 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingComplete, setLoadingComplete] = useState(false);
   const { theme } = useTheme();
+  const [shouldReload, setShouldReload] = useState(false);
+
+   useEffect(() => {
+    const checkOnboardingStatus = async () => {
+      const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
+      if (onboardingComplete === 'true') {
+        setIsFirstLaunch(false);
+      }
+    };
+
+    // Check every second for onboarding completion (simple polling)
+    const interval = setInterval(checkOnboardingStatus, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const linking = {
     prefixes: [prefix],
@@ -177,6 +192,14 @@ function AppContent() {
 
   const checkFirstLaunch = async () => {
     console.log('🔍 Starting checkFirstLaunch...');
+
+  //    // ✅ TEMPORARY - Force onboarding to show
+  // setIsFirstLaunch(true);
+  // setIsLoggedIn(false);
+  // setIsLoading(false);
+  // return; // Stop here, don't check AsyncStorage
+
+
     try {
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
       const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
@@ -403,7 +426,7 @@ useEffect(() => {
       </Stack.Navigator>
       
       {/* 🌿 FLOATING CHAT - Shows on ALL screens EXCEPT onboarding */}
-      {!isFirstLaunch && <FloatingAethyChatModal />}
+       {!isFirstLaunch && isLoggedIn && <FloatingAethyChatModal />}
       
     </NavigationContainer>
   );
